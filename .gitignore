@@ -1,3 +1,9 @@
+*workspace
+wandb/
+.vscode/
+configs/
+log/
+arxiv_result/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

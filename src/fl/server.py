@@ -1,0 +1,150 @@
+import os
+import logging
+import torch
+import copy
+import glob
+import weakref
+from typing import List
+import wandb
+import numpy as np
+
+from src.utils.device_selector import get_free_device_name
+from src.utils.metric_logger import MetricLogger
+from src.fl.client import Client
+from src.tasks.task_registry import TaskRegistry
+
+class Server:
+    def __init__(self, clients: List[Client], cfg):
+        self.clients = clients
+        self.r = 0
+        for client in self.clients:
+            client.server = weakref.proxy(self)
+        self.factory = TaskRegistry.get_factory(cfg['task'])
+        self.evaluation_strategy = self.factory.create_evaluation_strategy(cfg)
+
+        self.save_checkpoints = True  # turn on to save the checkpoints
+        self.rounds = cfg['fl']['rounds']
+        self.warm_up = cfg['fl']['warm_up']
+
+        # weight ratio is the same for all clients, as the iteration number is the same
+        self.weights_ratio = [1.0 / len(self.clients)] * len(self.clients) 
+        
+        self.test_start_round = cfg['fl']['test_start_round']
+        self.model_save_start_round = cfg['fl']['model']['save_start_round']
+        self.model_save_interval = cfg['fl']['model']['save_interval']
+        self.result_save_start_round = cfg['fl']['result']['save_start_round']
+        self.result_save_interval = cfg['fl']['result']['save_interval']
+
+        self.metric_logger = MetricLogger()
+        self.cfg = copy.deepcopy(cfg)
+
+        if self.cfg["fl"]["wandb_global"]:
+            self.wandb_init()
+        self.load_model()
+       
+    def wandb_init(self):
+        wandb.login(key=self.cfg["wandb"]["key"])
+        self.wandb_id = wandb.util.generate_id()
+        self.experiment = wandb.init(project=f'{self.cfg["wandb"]["project"]}', resume='allow', id=self.wandb_id, name=self.cfg["wandb"]["run_name"])
+        self.experiment.config.update(
+            dict(steps=self.cfg["train"]["max_iter"], batch_size=  self.cfg["train"]["batch_size"],
+                 learning_rate = self.cfg["train"]["optimizer"]["lr"]), allow_val_change=True)
+       
+        logging.info("######## Running wandb logger")
+
+    def wandb_upload(self, metric_logger):
+        self.experiment.log(metric_logger._dict)
+
+    def aggregate(self, clients, weights_ratio):
+        # FedAvg
+        w_avg = copy.deepcopy(clients[0].model.state_dict())
+        for k in w_avg.keys():
+            w_avg[k] = w_avg[k].to('cpu') * weights_ratio[0]
+
+        for i in range(1, len(clients)):
+            client_state_dict = {k: v.to('cpu') for k, v in clients[i].model.state_dict().items()}
+            for k in w_avg.keys():
+                w_avg[k] += client_state_dict[k] * weights_ratio[i]
+        return w_avg
+
+    def load_model(self):
+        resume_path = self.cfg['train']['resume_path']
+        if resume_path is not None and os.path.isfile(resume_path):
+            logging.info(f"Resume from: {resume_path}")
+            w = torch.load(resume_path)
+            # send global model
+            for client in self.clients:
+                client.load_model(w)
+
+    def save_model(self, w_avg, name):
+        torch.save(w_avg,
+            os.path.join(self.cfg["train"]["checkpoint_dir"], name + '.pth')
+        )
+
+    def run(self):
+        self.best_metric = 0
+
+        for self.r in range(self.rounds):
+            runned_clients = self.run_clients()
+            weights_ratio = [1.0 / len(runned_clients)] * len(runned_clients) 
+            w_avg = self.aggregate(runned_clients, weights_ratio)
+            self.distribute_global_model(w_avg)
+            self.run_evaluation(w_avg)
+        
+        if self.cfg["fl"]["wandb_global"]:
+            self.experiment.finish()
+
+    def run_clients(self):
+        runned_clients = []
+        if self.r < self.warm_up:
+            for client in self.clients:
+                if client.is_labeled_client:
+                    client.run()
+                    runned_clients.append(client)
+        else:
+            for client in self.clients:
+                client.run()
+                runned_clients.append(client)
+        return runned_clients
+
+        
+    
+    def distribute_global_model(self, w_avg):
+        for client in self.clients:
+            client.load_model(w_avg)
+        
+    def run_evaluation(self, w_avg):
+        # save the global model automatically
+        if (self.r >= self.model_save_start_round and (self.r - self.model_save_start_round) % self.model_save_interval == 0):
+            self.save_model(w_avg, f"global_model_round_{self.r}")
+
+        if (self.r >= self.test_start_round):
+            self.global_test(w_avg)
+        
+        # upload the metrics to wandb
+        if self.cfg["fl"]["wandb_global"]:
+            self.wandb_upload(self.metric_logger)
+    
+    def global_test(self, w_avg):
+        model = copy.deepcopy(self.clients[0].model)
+        model.load_state_dict(w_avg)
+        
+        root_dir = self.cfg['dataset']['test']
+        cfg = copy.deepcopy(self.cfg)
+        client_folders = [os.path.basename(f) for f in glob.glob(os.path.join(root_dir, 'client*')) if os.path.isdir(f)]
+        for client_folder in client_folders:
+            test_csv = os.path.join(root_dir, client_folder, 'test.csv')
+            cfg['dataset']['test'] = test_csv
+            dataset = self.factory.create_dataset(mode='test', cfg=cfg)
+            data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"], shuffle=False, 
+                                                    num_workers=8, pin_memory=True)
+            device = get_free_device_name(gpu_exclude_list=self.cfg["train"]["gpu_exclude"])
+            
+            if self.r >= self.result_save_start_round and (self.r - self.result_save_start_round) % self.result_save_interval == 0:
+                save_path = self.cfg['wandb']['run_name'] + f"_round_{self.r}_{client_folder}"
+            else:
+                save_path = None
+            metrics = self.evaluation_strategy.test(model, data_loader, device, save_path)
+            metrics = {f"{client_folder}/{key}": value for key, value in metrics.items()}
+            self.metric_logger.update(**metrics)
+            logging.info(f"######## Global test on {client_folder} : {metrics}")
