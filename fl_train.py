@@ -43,19 +43,19 @@ if __name__ == "__main__":
             if args.trainer == 'semi':
                 clients = []
                 labeled_clients = args.labeled_clients
-                unlabeled_clients = args.unlabeled_clients
                 unseen_clients = args.unseen_clients
-                duplicate_clients = set.intersection(set(labeled_clients), set(unlabeled_clients), set(unseen_clients))
+                duplicate_clients = set.intersection(set(labeled_clients), set(unseen_clients))
                 if duplicate_clients:
                     raise ValueError(f"Duplicate clients: {duplicate_clients}")
-                logging.info(f"Labeled clients: {labeled_clients}, Unlabeled clients: {unlabeled_clients}, Unseen clients: {unseen_clients}")
+                logging.info(f"Labeled clients: {labeled_clients}, Unseen clients: {unseen_clients}")
                 for client in labeled_clients:
                     clients.append(Client(client, args, cfg, is_labeled_client=True))
-                for client in unlabeled_clients:
-                    clients.append(Client(client, args, cfg, is_labeled_client=False))
             else:
-                clients = args.labeled_clients
-                for client in clients:
+                clients = []
+                labeled_clients = args.labeled_clients
+                unseen_clients = args.unseen_clients
+                logging.info(f"Labeled clients: {labeled_clients}, Unseen clients: {unseen_clients}")
+                for client in labeled_clients:
                     clients.append(Client(client, args, cfg, is_labeled_client=True, is_fully_supervised=True))                                                                             
             server = Server(clients, cfg)
             server.run()

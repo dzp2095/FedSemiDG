@@ -39,13 +39,13 @@ python3 local_train.py \
     --trainer "supervised" 
 
 python3 fl_train.py \
-    --config "/storage/zhipengdeng/project/fed_semi/configs/fundus/fl_run_conf.yaml" \
-    --run_name "fl_semi_labeled_1_2_unlabeled_3" \
-    --train_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/" \
+    --config "/zhipengdeng/project/fed_semi/configs/fundus/fl_run_conf.yaml" \
+    --run_name "fl_fully_labeled_1_2_3_unseen_4" \
+    --train_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi" \
+    --test_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi" \
     --deterministic 0 \
-    --labeled_clients client_1 client_2 \
-    --unlabeled_clients client_3 \
+    --labeled_clients client_1 client_2 client_3 \
+    --trainer semi \
     --unseen_clients client_4
 
 python3 fl_train.py \

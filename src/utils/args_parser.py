@@ -16,7 +16,6 @@ def args_parser():
     parser.add_argument('--test_path', type=str, default=None, help='test path for localized training')
     parser.add_argument('--trainer', type=str, default='supervised', help='trainer type: supervised, semi')
     parser.add_argument('--labeled_clients', type=str, nargs='+', default=None, help='labeled clients')
-    parser.add_argument('--unlabeled_clients', type=str, nargs='+', default=None, help='unlabeled clients')
     parser.add_argument('--unseen_clients', type=str, nargs='+', default=None, help='unseen clients')
     args, unknown = parser.parse_known_args()
     return args

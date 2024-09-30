@@ -4,6 +4,7 @@ import numpy as np
 import copy
 from tqdm import tqdm
 import torch.nn.functional as F
+import os
 
 from src.modules.defaults import TrainerBase
 from src.modules import hooks
@@ -38,9 +39,9 @@ class SemiTrainer(TrainerBase):
         batch_size = self.cfg["train"]["batch_size"]
         factory = TaskRegistry.get_factory(self.cfg['task'])
         train_root = self.cfg['dataset']['train']
-        self.cfg['dataset']['train'] = f"{train_root}/labeled.csv"
+        self.cfg['dataset']['train'] = os.path.join(train_root, 'labeled.csv')
         labeled_dataset = factory.create_dataset(mode='train', is_labeled = True, cfg=self.cfg)
-        self.cfg['dataset']['train'] = f"{train_root}/unlabeled.csv"
+        self.cfg['dataset']['train'] = os.path.join(train_root, 'unlabeled.csv')
         unlabeled_dataset = factory.create_dataset(mode='train', is_labeled = False, cfg=self.cfg)
         self.labeled_data_num = len(labeled_dataset)
         self.unlabeled_data_num = len(unlabeled_dataset)

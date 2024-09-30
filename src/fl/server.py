@@ -37,6 +37,7 @@ class Server:
 
         self.metric_logger = MetricLogger()
         self.cfg = copy.deepcopy(cfg)
+        self.device = get_free_device_name(gpu_exclude_list=self.cfg["train"]["gpu_exclude"])
 
         if self.cfg["fl"]["wandb_global"]:
             self.wandb_init()
@@ -138,13 +139,12 @@ class Server:
             dataset = self.factory.create_dataset(mode='test', cfg=cfg)
             data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"], shuffle=False, 
                                                     num_workers=8, pin_memory=True)
-            device = get_free_device_name(gpu_exclude_list=self.cfg["train"]["gpu_exclude"])
             
             if self.r >= self.result_save_start_round and (self.r - self.result_save_start_round) % self.result_save_interval == 0:
                 save_path = self.cfg['wandb']['run_name'] + f"_round_{self.r}_{client_folder}"
             else:
                 save_path = None
-            metrics = self.evaluation_strategy.test(model, data_loader, device, save_path)
+            metrics = self.evaluation_strategy.test(model, data_loader, self.device, save_path)
             metrics = {f"{client_folder}/{key}": value for key, value in metrics.items()}
             self.metric_logger.update(**metrics)
             logging.info(f"######## Global test on {client_folder} : {metrics}")
