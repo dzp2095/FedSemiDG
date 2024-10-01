@@ -13,8 +13,7 @@ class Client(abc.ABC):
     def __init__(self, name, args, cfg, is_labeled_client=True, is_fully_supervised=False):
         self._name = name
         self.cfg = copy.deepcopy(cfg)
-        self.setup()
-        self.global_discriminator = None
+        self.setup_before_trainer()
         if is_labeled_client:
             if is_fully_supervised:
                 self.trainer = SupervisedTrainer(args, self.cfg)
@@ -22,6 +21,7 @@ class Client(abc.ABC):
                 self.trainer = SemiTrainer(args, self.cfg)
         else:
             self.trainer = UnsupervisedTrainer(args, self.cfg)
+        self.setup_after_trainer()
         self.round = 0
         self.trainer.client_label = int(name.split('_')[-1]) + 1
         self._is_labeled_client = is_labeled_client
@@ -29,19 +29,21 @@ class Client(abc.ABC):
     def load_model(self, model_weights):
         self.trainer.load_model(model_weights)
 
-    def setup(self):
+    def setup_before_trainer(self):
         self.cfg["wandb"]["run_name"] = f"{self.cfg['wandb']['run_name']}_rounds_{self.cfg['fl']['rounds']}_{self.name}"
         self.cfg['dataset']['train'] = f"{self.cfg['dataset']['train']}/{self.name}"
         self._train_path = self.cfg['dataset']['train']
         logging.info(f"{self.name}: Training data path: {self._train_path}")
         self.total_rounds = self.cfg['fl']['rounds']
+        
+    def setup_after_trainer(self):
         if self.cfg['local']['iter_per_round']['epoch'] != None:
             epoch = self.cfg['local']['iter_per_round']['epoch']
             self.iter_per_round = (self.train_data_num // self.cfg['train']['batch_size']) * epoch
         else:
             self.iter_per_round = self.cfg['local']['iter_per_round']['iter']
         max_iter =  self.total_rounds * self.iter_per_round
-        self.cfg["train"]["max_iter"] = max_iter
+        self.trainer.max_iter = max_iter
     
     def run(self):
         """train the model """
