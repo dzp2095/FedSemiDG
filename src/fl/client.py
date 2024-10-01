@@ -23,7 +23,6 @@ class Client(abc.ABC):
         else:
             self.trainer = UnsupervisedTrainer(args, self.cfg)
         self.round = 0
-        self._train_data_num = self.trainer.train_data_num
         self.trainer.client_label = int(name.split('_')[-1]) + 1
         self._is_labeled_client = is_labeled_client
 
@@ -36,7 +35,11 @@ class Client(abc.ABC):
         self._train_path = self.cfg['dataset']['train']
         logging.info(f"{self.name}: Training data path: {self._train_path}")
         self.total_rounds = self.cfg['fl']['rounds']
-        self.iter_per_round = self.cfg['fl']['local_iter']
+        if self.cfg['local']['iter_per_round']['epoch'] != None:
+            epoch = self.cfg['local']['iter_per_round']['epoch']
+            self.iter_per_round = (self.train_data_num // self.cfg['train']['batch_size']) * epoch
+        else:
+            self.iter_per_round = self.cfg['local']['iter_per_round']['iter']
         max_iter =  self.total_rounds * self.iter_per_round
         self.cfg["train"]["max_iter"] = max_iter
     
@@ -56,7 +59,7 @@ class Client(abc.ABC):
 
     @property
     def train_data_num(self):
-        return self._train_data_num
+        return self.trainer.train_data_num
         
     @property
     def class_nums(self):

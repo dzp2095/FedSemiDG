@@ -87,7 +87,12 @@ class Server:
 
         for self.r in range(self.rounds):
             runned_clients = self.run_clients()
-            weights_ratio = [1.0 / len(runned_clients)] * len(runned_clients) 
+            if self.cfg["fl"]["use_ga"]==True:
+                pass
+            else:
+                train_nums = [client.train_data_num for client in runned_clients]
+                train_num_sum = sum(train_nums)
+                weights_ratio = [num / train_num_sum for num in train_nums]
             w_avg = self.aggregate(runned_clients, weights_ratio)
             self.distribute_global_model(w_avg)
             self.run_evaluation(w_avg)

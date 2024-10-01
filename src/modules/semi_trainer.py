@@ -47,7 +47,6 @@ class SemiTrainer(TrainerBase):
         self.unlabeled_data_num = len(unlabeled_dataset)
 
         self._train_data_num = self.labeled_data_num + self.unlabeled_data_num
-        self.iter_per_epoch = self._train_data_num // batch_size + 1
 
         batch_size = self.cfg["train"]["batch_size"]
         num_workers = self.cfg["train"]["num_workers"]
