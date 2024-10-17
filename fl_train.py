@@ -22,8 +22,9 @@ if args.deterministic:
 
 now = str(datetime.timestamp(datetime.now()))
 
-Path(f'./log').mkdir(parents=True, exist_ok=True)
-logging.basicConfig(filename=f'log/log_{args.run_name}_{now}.txt',
+log_dir = Path(f'/storage/zhipengdeng/data/segmentation/fed_semi/log')
+Path(log_dir).mkdir(parents=True, exist_ok=True)
+logging.basicConfig(filename=f'{log_dir}/log_{args.run_name}_{now}.txt',
                     filemode='a',
                     format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
                     datefmt='%Y-%m-%d:%H:%M:%S',
@@ -43,21 +44,21 @@ if __name__ == "__main__":
             if args.trainer == 'semi':
                 clients = []
                 labeled_clients = args.labeled_clients
-                unseen_clients = args.unseen_clients
-                duplicate_clients = set.intersection(set(labeled_clients), set(unseen_clients))
+                unseen_client = args.unseen_client
+                duplicate_clients = set.intersection(set(labeled_clients), set([unseen_client]))
                 if duplicate_clients:
                     raise ValueError(f"Duplicate clients: {duplicate_clients}")
-                logging.info(f"Labeled clients: {labeled_clients}, Unseen clients: {unseen_clients}")
+                logging.info(f"Labeled clients: {labeled_clients}, Unseen clients: {unseen_client}")
                 for client in labeled_clients:
                     clients.append(Client(client, args, cfg, is_labeled_client=True))
             else:
                 clients = []
                 labeled_clients = args.labeled_clients
-                unseen_clients = args.unseen_clients
-                logging.info(f"Labeled clients: {labeled_clients}, Unseen clients: {unseen_clients}")
+                unseen_client = args.unseen_client
+                logging.info(f"Labeled clients: {labeled_clients}, Unseen clients: {unseen_client}")
                 for client in labeled_clients:
                     clients.append(Client(client, args, cfg, is_labeled_client=True, is_fully_supervised=True))                                                                             
-            server = Server(clients, cfg)
+            server = Server(clients, unseen_client, cfg)
             server.run()
     except Exception as e:
         logging.critical(e, exc_info=True)

@@ -55,7 +55,7 @@ class FundusEvalStrategy(EvaluationStrategy):
             masks = torch.cat((cup_mask.unsqueeze(1), disc_mask.unsqueeze(1)),dim=1)
 
             output = model(images)
-            pred_label = torch.sigmoid(output).ge(0.5)
+            pred_label = torch.sigmoid(output).ge(0.75)
 
             # # Loop over the number of classes (cup and disc in this case)
             # reference from the code of the paper: 
@@ -114,3 +114,43 @@ class FundusEvalStrategy(EvaluationStrategy):
         hd_metric.reset()
         asd_metric.reset()
         return metrics
+    
+    @torch.no_grad()
+    def cal_kl_loss(self, local_model, global_model, data_loader, device):
+        local_model.eval()
+        local_model.to(device=device)
+        global_model.eval()
+        global_model.to(device=device)
+
+        total_loss = 0.0
+        total_elements = 0
+        epsilon = 1e-8
+
+        for _, images, _ in tqdm(data_loader, desc='KL Calculation', unit='batch', leave=False):
+            images = images.to(device=device)
+            output_local = local_model(images)  # Shape: [batch_size, num_classes, H, W]
+            output_global = global_model(images)
+
+            probs_local = torch.sigmoid(output_local).clamp(min=epsilon, max=1 - epsilon)
+            probs_global = torch.sigmoid(output_global).clamp(min=epsilon, max=1 - epsilon)
+
+            log_probs_local = torch.log(probs_local)
+
+            kl_loss = F.kl_div(
+                log_probs_local,    
+                probs_global,       
+                reduction='sum'     
+            )
+
+            total_loss += kl_loss.item()
+
+            batch_size = images.size(0)
+            num_classes = output_local.size(1)
+            H = output_local.size(2)
+            W = output_local.size(3)
+            num_elements = batch_size * num_classes * H * W
+            total_elements += num_elements
+
+        average_loss = total_loss / total_elements
+        # larger average_loss means more difference between local and global model, which means worse generalization gap
+        return average_loss

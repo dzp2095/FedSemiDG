@@ -4,6 +4,7 @@ from src.tasks.task_factory import TaskFactory
 from src.tasks.fundus_task_factory import FundusTaskFactory
 from src.tasks.cardiac_task_factory import CardiacTaskFactory
 from src.tasks.prostate_task_factory import ProstateTaskFactory
+from src.tasks.spine_task_factory import SpineTaskFactory
 
 class TaskRegistry:
     _registry: Dict[str, Type[TaskFactory]] = {}
@@ -23,3 +24,4 @@ class TaskRegistry:
 TaskRegistry.register_task_factory("fundus", FundusTaskFactory)
 TaskRegistry.register_task_factory("prostate", ProstateTaskFactory)
 TaskRegistry.register_task_factory("cardiac", CardiacTaskFactory)
+TaskRegistry.register_task_factory("spine", SpineTaskFactory)

@@ -15,7 +15,7 @@ from src.utils.draw import draw_mask_and_save
 from src.utils.metric_logger import EMAMetricLogger
 from src.evaluation.evaluation_strategy import EvaluationStrategy
 
-class ProstateEvalStrategy(EvaluationStrategy):
+class SpineEvalStrategy(EvaluationStrategy):
     def __init__(self, cfg):
         self.cfg = cfg
         
@@ -35,38 +35,37 @@ class ProstateEvalStrategy(EvaluationStrategy):
     @torch.no_grad()
     def _run(self, model, data_loader, device, save_dir=None):
         model.eval()
-        part = ['base']
+        # part = ['sc', 'gm']
         model.to(device=device)
         num_val_batches = len(data_loader)
 
-        dice_metric = DiceMetric(include_background=False, reduction="none")
-        jc_metric = MeanIoU(include_background=False, reduction="mean")
-        hd_metric = HausdorffDistanceMetric(include_background=False, reduction="none", percentile=95)
-        asd_metric = SurfaceDistanceMetric(include_background=False, reduction="none")
+        dice_metric = DiceMetric(include_background=True, reduction="none")
+        jc_metric = MeanIoU(include_background=True, reduction="mean")
+        hd_metric = HausdorffDistanceMetric(include_background=True, reduction="none", percentile=95)
+        asd_metric = SurfaceDistanceMetric(include_background=True, reduction="none")
 
         # iterate over the validation set
-        for image_paths, image, mask in tqdm(data_loader, total=num_val_batches, desc='Evaluation', unit='batch', leave=False):
+        for image_paths, images, masks in tqdm(data_loader, total=num_val_batches, desc='Evaluation', unit='batch', leave=False):
             # move images and labels to correct device and type
-            image = image.to(device=device)
-            n_imgs = image.size(0)
-            mask = mask.to(device=device)
-            # 0 is the label for the background
-            mask = mask.ne(0).long().unsqueeze(1)
-            
-            output = model(image)
+            images = images.to(device=device)
+            n_imgs = images.size(0)
+            masks = masks.permute(0, 3, 1, 2).float().to(device=device)
+
+            output = model(images)
             pred_label = torch.sigmoid(output).ge(0.5)
 
-            # Loop over the number of classes (cup and disc in this case)
+            # # Loop over the number of classes (cup and disc in this case)
             # reference from the code of the paper: 
             # DoFE: Domain-oriented Feature Embedding for Generalizable Fundus Image Segmentation on Unseen Datasets
-            if pred_label.float().sum() < 1e-4:
-                # If no significant foreground is detected, set the entire prediction to background (0)
-                pred_label = torch.zeros_like(pred_label)
-
-            dice_values = dice_metric(y_pred=pred_label, y=mask)
-            jc_metric(y_pred=pred_label, y=mask)
-            hd_metric(y_pred=pred_label, y=mask)
-            asd_metric(y_pred=pred_label, y=mask)
+            for i in range(pred_label.shape[1]):  
+                if pred_label[:, i].float().sum() < 1e-4:
+                    # If no significant foreground is detected, you might want to set pred_label to all zeros
+                    pred_label[:, i] = torch.zeros_like(pred_label[:, i])
+            
+            dice_values = dice_metric(y_pred=pred_label, y=masks)
+            jc_metric(pred_label, masks)
+            hd_metric(y_pred=pred_label, y=masks)
+            asd_metric(y_pred=pred_label, y=masks)
             # save the predicted results
             if save_dir is not None:
                 for i in range(n_imgs):
@@ -78,10 +77,13 @@ class ProstateEvalStrategy(EvaluationStrategy):
                     Path(saved_path).parent.mkdir(parents=True, exist_ok=True)
                     img = Image.open(img_path)
                     img = np.array(img)
+                    # set the background to 0
+                    pred_label[i][0][pred_label[i][1] == 1] = 0
                     draw_mask_and_save(img, pred_label[i], saved_path)
                     
         dc = dice_metric.aggregate().mean(axis=0)
-        prostate_dc = dc[0].item()
+        sc_dc = dc[0].item()
+        gm_dc = dc[1].item()
         avg_dc = dc.mean().item()
 
         jc = jc_metric.aggregate().item()
@@ -99,7 +101,8 @@ class ProstateEvalStrategy(EvaluationStrategy):
         asd = asd_aggregated.mean().item()
 
         metrics = {
-            "prostate_dc": prostate_dc,
+            "sc_dc": sc_dc,
+            "gm_dc": gm_dc,
             "avg_dc": avg_dc,
             "jc": jc,
             "hd": hd,
@@ -148,4 +151,5 @@ class ProstateEvalStrategy(EvaluationStrategy):
             total_elements += num_elements
 
         average_loss = total_loss / total_elements
+        # larger average_loss means more difference between local and global model, which means worse generalization gap
         return average_loss

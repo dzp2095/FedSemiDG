@@ -7,3 +7,6 @@ class EvaluationStrategy:
     
     def custom_eval(self, model, data_loader, device, prefix, save_path) -> dict:
         raise NotImplementedError
+
+    def cal_kl_loss(self, local_model, global_model, data_loader, device) -> float:
+        raise NotImplementedError

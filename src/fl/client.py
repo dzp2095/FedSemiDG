@@ -39,7 +39,7 @@ class Client(abc.ABC):
     def setup_after_trainer(self):
         if self.cfg['local']['iter_per_round']['epoch'] != None:
             epoch = self.cfg['local']['iter_per_round']['epoch']
-            self.iter_per_round = (self.train_data_num // self.cfg['train']['batch_size']) * epoch
+            self.iter_per_round = ((self.train_data_num // self.cfg['train']['batch_size']) + 1)* epoch
         else:
             self.iter_per_round = self.cfg['local']['iter_per_round']['iter']
         max_iter =  self.total_rounds * self.iter_per_round
@@ -75,3 +75,6 @@ class Client(abc.ABC):
     def is_labeled_client(self):
         return self._is_labeled_client
 
+    @property
+    def ga_value(self):
+        return self.trainer.ga_value

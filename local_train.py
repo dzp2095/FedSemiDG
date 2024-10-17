@@ -22,8 +22,9 @@ if args.deterministic:
 
 now = str(datetime.timestamp(datetime.now()))
 
-Path(f'./log').mkdir(parents=True, exist_ok=True)
-logging.basicConfig(filename=f'log/log_{args.run_name}_{now}.txt',
+log_dir = Path(f'/storage/zhipengdeng/data/segmentation/fed_semi/log')
+Path(log_dir).mkdir(parents=True, exist_ok=True)
+logging.basicConfig(filename=f'{log_dir}/log_{args.run_name}_{now}.txt',
                     filemode='a',
                     format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
                     datefmt='%Y-%m-%d:%H:%M:%S',

@@ -109,7 +109,6 @@ class TrainerBase:
         """
         self.iter = 0
         self.start_iter = 0
-        self.epoch = 0
         self.max_iter = self.cfg["train"]["max_iter"]
         if self.cfg["train"]["device"] is not None:
             self.device = self.cfg["train"]["device"]
@@ -132,11 +131,11 @@ class TrainerBase:
         raise NotImplementedError
             
     def build_optimizer(self):
-        # self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.cfg["train"]["optimizer"]['lr'],
-        #     betas=(self.cfg["train"]["optimizer"]['beta1'],self.cfg["train"]["optimizer"]['beta2']), 
-        #     weight_decay=self.cfg["train"]["optimizer"]['weight_decay'])
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.cfg["train"]["optimizer"]['lr'],
-            momentum=self.cfg["train"]["optimizer"]['momentum'], weight_decay=self.cfg["train"]["optimizer"]['weight_decay'])
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.cfg["train"]["optimizer"]['lr'],
+            betas=(self.cfg["train"]["optimizer"]['beta1'],self.cfg["train"]["optimizer"]['beta2']), 
+            weight_decay=self.cfg["train"]["optimizer"]['weight_decay'])
+        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.cfg["train"]["optimizer"]['lr'],
+        #     momentum=self.cfg["train"]["optimizer"]['momentum'], weight_decay=self.cfg["train"]["optimizer"]['weight_decay'])
 
     def build_schedular(self, optimizer):
         self.lr_scheduler = ReduceLROnPlateau(optimizer, factor=self.cfg["train"]["lr_scheduler"]["factor"], 
@@ -183,8 +182,6 @@ class TrainerBase:
                     self.after_step()
                     pbar.update(1)
                     pbar.set_postfix(**{'loss (batch)': self.metric_logger.loss})
-                    if self.iter % self.iter_per_epoch == 0:
-                        self.epoch += 1
                 # self.iter == max_iter can be used by `after_train` to
                 # tell whether the training successfully finished or failed
                 # due to exceptions.

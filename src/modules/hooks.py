@@ -11,6 +11,7 @@ from src.modules.defaults import HookBase
 from src.utils.device_selector import get_free_device_name
 from src.tasks.task_registry import TaskRegistry
 from src.model.ema import ModelEMA
+from torch.utils.data import ConcatDataset
 
 class Timer(HookBase):
     def before_train(self):
@@ -74,7 +75,7 @@ class EvalHook(HookBase):
             cfg = copy.deepcopy(self.cfg)
             client_folders = [os.path.basename(f) for f in glob.glob(os.path.join(root_dir, 'client*')) if os.path.isdir(f)]
             for client_folder in client_folders:
-                test_csv = os.path.join(root_dir, client_folder, 'test.csv')
+                test_csv = os.path.join(root_dir, client_folder, 'all.csv')
                 cfg['dataset']['test'] = test_csv
                 dataset = self.factory.create_dataset(mode='test', cfg=cfg)
                 data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"], shuffle=False, 
@@ -93,7 +94,41 @@ class EvalHook(HookBase):
                 self.trainer.metric_logger.update(**metrics)
                 logging.info(f"######## Locailized test on {client_folder} : {metrics}")
         return super().before_step()
+
+class GA(HookBase):
+    def __init__(self, cfg):
+        self._ga_value = 1
+        self.cfg = copy.deepcopy(cfg)
+        self.factory = TaskRegistry.get_factory(cfg['task'])
+        self.evaluation_strategy = self.factory.create_evaluation_strategy(cfg)
+
+    def before_train(self):
+        # save the global model
+        self.global_model = copy.deepcopy(self.trainer.model)
+        return super().before_train()
+
+    def after_train(self):
+        # evaluation of the updated local model and the global model on the training set
+        train_root = self.cfg['dataset']['train']
+        self.cfg['dataset']['test'] = os.path.join(train_root, 'labeled.csv')
+        labeled_dataset = self.factory.create_dataset(mode='test', cfg=self.cfg)
+        self.cfg['dataset']['test'] = os.path.join(train_root, 'unlabeled.csv')
+        unlabeled_dataset = self.factory.create_dataset(mode='test', cfg=self.cfg)
+        self.cfg['dataset']['test'] = train_root
+        dataset = ConcatDataset([labeled_dataset, unlabeled_dataset])
+        data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"], shuffle=False, 
+                                        num_workers=8, pin_memory=True)
+        self.ga_value = self.evaluation_strategy.cal_kl_loss(self.trainer.model, self.global_model, data_loader, self.trainer.device)
+        return super().after_train()
     
+    @property
+    def ga_value(self):
+        return self._ga_value
+    
+    @ga_value.setter
+    def ga_value(self, value):
+        self._ga_value = value
+
 class EMA(HookBase):
     def __init__(self, cfg):
         self.decay = cfg["train"]["ema_decay"]

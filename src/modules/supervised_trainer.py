@@ -27,6 +27,8 @@ class SupervisedTrainer(TrainerBase):
             self.run_step = self._run_step_prostate
         elif task == 'cardiac':
             self.run_step = self._run_step_cardiac
+        elif task =='spine':
+            self.run_step = self._run_step_spine
             
     def build_model(self):
         num_channels = self.cfg["model"]["num_channels"]
@@ -42,7 +44,6 @@ class SupervisedTrainer(TrainerBase):
         self._train_data_num = len(dataset)
         self.iter_per_epoch = self._train_data_num // batch_size + 1
 
-        batch_size = self.cfg["train"]["batch_size"] * 2
         num_workers = self.cfg["train"]["num_workers"]
         seed = self.cfg["dataset"]["seed"]
         data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True,
@@ -109,6 +110,26 @@ class SupervisedTrainer(TrainerBase):
         mask = mask.to(self.device)
         # 0 is the label for the background
         mask = mask.ne(0).long().unsqueeze(1)
+
+        output = self.model(image)
+        loss_fn = DiceCELoss(sigmoid=True)
+
+        loss = loss_fn(output, mask)
+        
+        self.loss_logger.update(loss=loss)
+        self.metric_logger.update(loss=loss)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+    
+    def _run_step_spine(self):
+        self.model.train()
+        self.model.to(self.device)
+        _, image, mask = next(self._data_iter)
+        image = image.to(self.device)
+        # b,h,w,c to b,c,h,w 
+        mask = mask.permute(0, 3, 1, 2).float().to(device=self.device)
 
         output = self.model(image)
         loss_fn = DiceCELoss(sigmoid=True)

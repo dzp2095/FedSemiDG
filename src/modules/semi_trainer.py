@@ -27,6 +27,10 @@ class SemiTrainer(TrainerBase):
             self.run_step = self._run_step_prostate
         elif task == 'cardiac':
             self.run_step = self._run_step_cardiac
+        elif task =='spine':
+            self.run_step = self._run_step_spine
+        else:
+            raise NotImplementedError(f"Task {task} not supported")
 
         self.ema_model = None
             
@@ -43,12 +47,14 @@ class SemiTrainer(TrainerBase):
         labeled_dataset = factory.create_dataset(mode='train', is_labeled = True, cfg=self.cfg)
         self.cfg['dataset']['train'] = os.path.join(train_root, 'unlabeled.csv')
         unlabeled_dataset = factory.create_dataset(mode='train', is_labeled = False, cfg=self.cfg)
+        
+        self.cfg['dataset']['train'] = train_root
         self.labeled_data_num = len(labeled_dataset)
         self.unlabeled_data_num = len(unlabeled_dataset)
 
         self._train_data_num = self.labeled_data_num + self.unlabeled_data_num
 
-        batch_size = self.cfg["train"]["batch_size"]
+        batch_size = self.cfg["train"]["batch_size"] // 2
         num_workers = self.cfg["train"]["num_workers"]
         seed = self.cfg["dataset"]["seed"]
         labeled_data_loader = torch.utils.data.DataLoader(labeled_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True,
@@ -76,11 +82,15 @@ class SemiTrainer(TrainerBase):
 
         if self.cfg["local"]["eval_interval"]!=0:
             ret.append(hooks.EvalHook(self.cfg))
+
         ret.append(hooks.EMA(self.cfg))
+
+        if self.cfg["fl"]["use_ga"]!=0:
+            ret.append(hooks.GA(self.cfg))
+
         return ret
     
     def before_train(self):
-        self._train_data_num = 0
         return super().before_train()
 
     def after_train(self):
@@ -214,6 +224,47 @@ class SemiTrainer(TrainerBase):
         loss.backward()
         self.optimizer.step()
 
+    def _run_step_spine(self):
+        self.model.train()
+        self.model.to(self.device)
+        threshold = self.cfg['train']['pseudo_label_threshold'] 
+
+        _, lb_x, lb_y = next(self._labeled_data_iter)
+        _, ulb_w, ulb_s = next(self._unlabeled_data_iter)
+        lb_y = lb_y.permute(0, 3, 1, 2).float()
+
+        lb_x, lb_y, ulb_w, ulb_s = lb_x.to(self.device), lb_y.to(self.device), ulb_w.to(self.device), ulb_s.to(self.device)
+        
+        # generate pseudo labels
+        with torch.no_grad():
+            ulb_logit = self.ema_model.ema(ulb_w)
+            ulb_prob = ulb_logit.sigmoid()
+            ulb_y = ulb_prob.ge(0.5).float()
+            ulb_y_mask = ulb_prob.ge(threshold).float() + ulb_prob.lt(1-threshold).float()
+
+        data = torch.cat((lb_x, ulb_s), dim=0)
+        lb_sz = lb_x.size(0)
+        output = self.model(data)
+        output_lb_x, output_ulb_s = output[:lb_sz], output[lb_sz:]
+        # calculate supervised loss
+        dice_ce_loss_fn = DiceCELoss(sigmoid=True)
+        sup_loss = dice_ce_loss_fn(output_lb_x, lb_y)
+        # calculate consistency loss
+        ce_loss_fn = torch.nn.BCEWithLogitsLoss(reduction='none')
+        masked_dice_loss_fn = MaskedDiceLoss(sigmoid=True)
+        unsup_loss = (ce_loss_fn(output_ulb_s, ulb_y)*ulb_y_mask).mean()
+        # calculate masked dice loss for each class
+        for i in range(output_ulb_s.size(1)):             
+            unsup_loss += masked_dice_loss_fn(output_ulb_s[:, i, :, :].unsqueeze(1), ulb_y[:, i, :, :].unsqueeze(1), ulb_y_mask[:, i, :, :].unsqueeze(1))
+        
+        loss = sup_loss + unsup_loss
+        self.loss_logger.update(loss=loss)
+        self.metric_logger.update(loss=loss)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
     @property
     def is_fully_supervised(self):
         return self._is_fully_supervised
@@ -225,5 +276,13 @@ class SemiTrainer(TrainerBase):
     @property
     def train_data_num(self):
         return self._train_data_num
+    
+    @property
+    def ga_value(self):
+        if self.cfg["fl"]["use_ga"]:
+            return self._hooks[-1].ga_value
+        else:
+            raise AttributeError('GA hook is not registered')
+        
 
     

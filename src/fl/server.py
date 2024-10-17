@@ -14,8 +14,9 @@ from src.fl.client import Client
 from src.tasks.task_registry import TaskRegistry
 
 class Server:
-    def __init__(self, clients: List[Client], cfg):
+    def __init__(self, clients: List[Client], unseen_client, cfg):
         self.clients = clients
+        self.unseen_client = unseen_client
         self.r = 0
         for client in self.clients:
             client.server = weakref.proxy(self)
@@ -82,17 +83,58 @@ class Server:
             os.path.join(self.cfg["train"]["checkpoint_dir"], name + '.pth')
         )
 
+    # reference from: https://github.com/MediaBrain-SJTU/FedDG-GA
+    def refine_weight_by_GA(self, ga_values, initial_step_size=0.05):
+        ga_values = np.array(ga_values)
+        initial_step_size = 1./3. * initial_step_size
+        norm_gap_list = ga_values / np.max(np.abs(ga_values))
+
+        # Linear decay
+        current_round = self.r
+        total_rounds = self.rounds
+        decayed_step_size = initial_step_size * (1 - current_round / total_rounds)
+
+        for i, norm_gap in enumerate(norm_gap_list):
+            self.ga_weights_ratio[i] += norm_gap * decayed_step_size
+
+        self.ga_weights_ratio = self.weight_clip(self.ga_weights_ratio)
+        
+    def weight_clip(self, weight_list):
+        # Clip weights
+        clipped_weights = [np.clip(w, 0.0, 1.0) for w in weight_list]
+        # Sum of weights
+        total_weight = sum(clipped_weights)
+        # Normalize
+        if total_weight > 0:
+            normalized_weights = [w / total_weight for w in clipped_weights]
+        else:
+            normalized_weights = [1.0 / len(clipped_weights)] * len(clipped_weights)
+        return normalized_weights
+
     def run(self):
         self.best_metric = 0
+        self.ga_weights_ratio = None
 
         for self.r in range(self.rounds):
             runned_clients = self.run_clients()
             if self.cfg["fl"]["use_ga"]==True:
-                pass
+                ga_values = [client.trainer.ga_value for client in runned_clients]
+                if self.ga_weights_ratio is None:
+                    # initialize the weights
+                    num_client = len(runned_clients)
+                    self.ga_weights_ratio = [1.0 / num_client] * num_client
+                    weights_ratio = self.ga_weights_ratio
+                    # update the weights, but don't use the updated weights for the first time
+                    self.refine_weight_by_GA(ga_values)
+                else:
+                    self.refine_weight_by_GA(ga_values)
+                    weights_ratio = self.ga_weights_ratio
+                logging.info(f"######## GA weights ratio: {weights_ratio}")
             else:
                 train_nums = [client.train_data_num for client in runned_clients]
                 train_num_sum = sum(train_nums)
                 weights_ratio = [num / train_num_sum for num in train_nums]
+                logging.info(f"######## Weights ratio: {weights_ratio}")
             w_avg = self.aggregate(runned_clients, weights_ratio)
             self.distribute_global_model(w_avg)
             self.run_evaluation(w_avg)
@@ -137,19 +179,18 @@ class Server:
         
         root_dir = self.cfg['dataset']['test']
         cfg = copy.deepcopy(self.cfg)
-        client_folders = [os.path.basename(f) for f in glob.glob(os.path.join(root_dir, 'client*')) if os.path.isdir(f)]
-        for client_folder in client_folders:
-            test_csv = os.path.join(root_dir, client_folder, 'test.csv')
-            cfg['dataset']['test'] = test_csv
-            dataset = self.factory.create_dataset(mode='test', cfg=cfg)
-            data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"], shuffle=False, 
-                                                    num_workers=8, pin_memory=True)
-            
-            if self.r >= self.result_save_start_round and (self.r - self.result_save_start_round) % self.result_save_interval == 0:
-                save_path = self.cfg['wandb']['run_name'] + f"_round_{self.r}_{client_folder}"
-            else:
-                save_path = None
-            metrics = self.evaluation_strategy.test(model, data_loader, self.device, save_path)
-            metrics = {f"{client_folder}/{key}": value for key, value in metrics.items()}
-            self.metric_logger.update(**metrics)
-            logging.info(f"######## Global test on {client_folder} : {metrics}")
+       
+        test_csv = os.path.join(root_dir, self.unseen_client, 'all.csv')
+        cfg['dataset']['test'] = test_csv
+        dataset = self.factory.create_dataset(mode='test', cfg=cfg)
+        data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"]*2, shuffle=False, 
+                                                num_workers=8, pin_memory=True)
+        
+        if self.r >= self.result_save_start_round and (self.r - self.result_save_start_round) % self.result_save_interval == 0:
+            save_path = self.cfg['wandb']['run_name'] + f"_round_{self.r}_{self.unseen_client}"
+        else:
+            save_path = None
+        metrics = self.evaluation_strategy.test(model, data_loader, self.device, save_path)
+        metrics = {f"{self.unseen_client}/{key}": value for key, value in metrics.items()}
+        self.metric_logger.update(**metrics)
+        logging.info(f"######## Global test on {self.unseen_client} : {metrics}")
