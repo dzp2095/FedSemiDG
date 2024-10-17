@@ -4,7 +4,7 @@ from glob import glob
 from pathlib import Path
 import os
 
-pred_img_path = "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/*/data/*/img_vis/result/*/*.png"
+pred_img_path = "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/*/data/*/img_vis/result/*/*dice*.png"
 pred_img_files = glob(pred_img_path)
 
 for pred_img_file in pred_img_files:
