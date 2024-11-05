@@ -125,7 +125,7 @@ class SpineEvalStrategy(EvaluationStrategy):
         total_elements = 0
         epsilon = 1e-8
 
-        for _, images, _ in tqdm(data_loader, desc='KL Calculation', unit='batch', leave=False):
+        for _, images in tqdm(data_loader, desc='KL Calculation', unit='batch', leave=False):
             images = images.to(device=device)
             output_local = local_model(images)  # Shape: [batch_size, num_classes, H, W]
             output_global = global_model(images)

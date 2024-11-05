@@ -87,13 +87,17 @@ class SpineDataset(Dataset):
                 tensor_weak_image = self.transforms['normal'](image=np.array(image))['image']
                 tensor_strong_image = self.transforms['normal'](image=np.array(strong['image']))['image']
                 return image_path, tensor_weak_image, tensor_strong_image
-        else: # test or val
+        elif self.mode == 'eval' or self.mode == 'test':
             mask = self.load_mask(mask_path, image)
-
             transformed = self.transforms['normal'](image=np.array(image), mask=np.array(mask))
             image = transformed['image']
             mask = transformed['mask']
             return image_path, image, mask
+        else:
+            self.mode == 'only_image'
+            transformed = self.transforms['normal'](image=np.array(image))
+            image = transformed['image']
+            return image_path, image
         
     def load_mask(self, mask_path, image):
         if isinstance(mask_path, str) and mask_path and os.path.exists(mask_path):
@@ -105,7 +109,7 @@ class SpineDataset(Dataset):
             print(f"Warning: Invalid mask_path '{mask_path}'. Using a zero mask instead.")
             h, w = image.shape
             c = self.num_classes
-        return Image.fromarray(np.zeros((h, w, c), dtype=np.uint8))
+            return Image.fromarray(np.zeros((h, w, c), dtype=np.uint8))
     
     def __len__(self):
         return len(self.img_paths)

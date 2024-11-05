@@ -110,11 +110,11 @@ class GA(HookBase):
     def after_train(self):
         # evaluation of the updated local model and the global model on the training set
         train_root = self.cfg['dataset']['train']
-        self.cfg['dataset']['test'] = os.path.join(train_root, 'labeled.csv')
-        labeled_dataset = self.factory.create_dataset(mode='test', cfg=self.cfg)
-        self.cfg['dataset']['test'] = os.path.join(train_root, 'unlabeled.csv')
-        unlabeled_dataset = self.factory.create_dataset(mode='test', cfg=self.cfg)
-        self.cfg['dataset']['test'] = train_root
+        self.cfg['dataset']['only_image'] = os.path.join(train_root, 'labeled.csv')
+        labeled_dataset = self.factory.create_dataset(mode='only_image', cfg=self.cfg)
+        self.cfg['dataset']['only_image'] = os.path.join(train_root, 'unlabeled.csv')
+        unlabeled_dataset = self.factory.create_dataset(mode='only_image', cfg=self.cfg)
+        self.cfg['dataset']['only_image'] = train_root
         dataset = ConcatDataset([labeled_dataset, unlabeled_dataset])
         data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"], shuffle=False, 
                                         num_workers=8, pin_memory=True)
