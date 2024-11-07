@@ -12,6 +12,7 @@ import pandas as pd
 from PIL import Image
 import logging
 import cv2
+import os
 
 import albumentations
 from albumentations.pytorch import ToTensorV2
@@ -74,10 +75,10 @@ class CardiacDataset(Dataset):
         train_img_path = self.train_np_paths[index]
         image = np.load(train_img_path)
         mask_path = self.mask_paths[index]
-        mask = Image.open(mask_path)
         
         if self.mode == 'train':
             if self.is_labeled:
+                mask = self.load_mask(mask_path, image)
                 transformed = self.transforms['weak'](image=np.array(image), mask=np.array(mask))
                 tensor_transformed = self.transforms['normal'](image = transformed['image'], mask = transformed['mask'])
                 return image_path, tensor_transformed['image'], tensor_transformed['mask']
@@ -100,7 +101,19 @@ class CardiacDataset(Dataset):
             transformed = self.transforms['normal'](image=np.array(image))
             image = transformed['image']
             return image_path, image
-        
+
+    def load_mask(self, mask_path, image):
+        if isinstance(mask_path, str) and mask_path and os.path.exists(mask_path):
+            try:
+                return Image.open(mask_path)
+            except (IOError, OSError):
+                print(f"Warning: Unable to open image at {mask_path}. Using a zero mask instead.")
+        else:
+            print(f"Warning: Invalid mask_path '{mask_path}'. Using a zero mask instead.")
+            h, w = image.shape
+            c = self.num_classes
+            return Image.fromarray(np.zeros((h, w, c), dtype=np.uint8))
+
     def __len__(self):
         return len(self.img_paths)
 
