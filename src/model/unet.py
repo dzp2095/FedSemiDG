@@ -295,8 +295,9 @@ class Decoder(nn.Module):
         return y1_pred
 
 class UNet(nn.Module):
-    def __init__(self, n_channels=3, n_classes=2, n=16, norm='bn', activation='relu'):
+    def __init__(self, n_channels=3, n_classes=2, n=16, norm='bn', activation='relu', fp_rate=0.0):
         super(UNet, self).__init__()
+        self.fp_rate = fp_rate
         self.convd1 = ConvD(n_channels,     n, norm, first=True, activation=activation)
         self.convd2 = ConvD(n,   2*n, norm, activation=activation)
         self.convd3 = ConvD(2*n, 4*n, norm, activation=activation)
@@ -324,13 +325,33 @@ class UNet(nn.Module):
         x4 = self.convd4(x3)
         x5 = self.convd5(x4)
 
-        feats = [x1, x2, x3, x4, x5]
-        y4 = self.convu4(feats[-1], feats[-2])
-        y3 = self.convu3(y4, feats[-3])
-        y2 = self.convu2(y3, feats[-4])
-        y1 = self.convu1(y2, feats[-5])
-        y1_pred = self.out1(y1)
-        return y1_pred
+        if self.training and self.fp_rate > 0.0:
+            y4 = self.convu4(x5, x4)
+            y3 = self.convu3(y4, x3)
+            y2 = self.convu2(y3, x2)
+            y1 = self.convu1(y2, x1)
+            out = self.out1(y1)
+
+            # Repeat for out_fp with separate Dropout
+            x1_dropout1 = nn.Dropout2d(self.fp_rate)(x1)
+            x2_dropout1 = nn.Dropout2d(self.fp_rate)(x2)
+            x3_dropout1 = nn.Dropout2d(self.fp_rate)(x3)
+            x4_dropout1 = nn.Dropout2d(self.fp_rate)(x4)
+            x5_dropout1 = nn.Dropout2d(self.fp_rate)(x5)
+
+            y4_fp = self.convu4(x5_dropout1, x4_dropout1)
+            y3_fp = self.convu3(y4_fp, x3_dropout1)
+            y2_fp = self.convu2(y3_fp, x2_dropout1)
+            y1_fp = self.convu1(y2_fp, x1_dropout1)
+            return out, y1, y1_fp
+
+        # Original forward pass without Dropout
+        y4 = self.convu4(x5, x4)
+        y3 = self.convu3(y4, x3)
+        y2 = self.convu2(y3, x2)
+        y1 = self.convu1(y2, x1)
+        out = self.out1(y1)
+        return out
 
         
 class Rec_Decoder(nn.Module):
