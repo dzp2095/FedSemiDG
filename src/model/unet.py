@@ -324,14 +324,14 @@ class UNet(nn.Module):
         x3 = self.convd3(x2)
         x4 = self.convd4(x3)
         x5 = self.convd5(x4)
-
+        # Original forward pass without Dropout
+        y4 = self.convu4(x5, x4)
+        y3 = self.convu3(y4, x3)
+        y2 = self.convu2(y3, x2)
+        y1 = self.convu1(y2, x1)
+        out = self.out1(y1)
+        
         if self.training and self.fp_rate > 0.0:
-            y4 = self.convu4(x5, x4)
-            y3 = self.convu3(y4, x3)
-            y2 = self.convu2(y3, x2)
-            y1 = self.convu1(y2, x1)
-            out = self.out1(y1)
-
             # Repeat for out_fp with separate Dropout
             x1_dropout1 = nn.Dropout2d(self.fp_rate)(x1)
             x2_dropout1 = nn.Dropout2d(self.fp_rate)(x2)
@@ -344,13 +344,6 @@ class UNet(nn.Module):
             y2_fp = self.convu2(y3_fp, x2_dropout1)
             y1_fp = self.convu1(y2_fp, x1_dropout1)
             return out, y1, y1_fp
-
-        # Original forward pass without Dropout
-        y4 = self.convu4(x5, x4)
-        y3 = self.convu3(y4, x3)
-        y2 = self.convu2(y3, x2)
-        y1 = self.convu1(y2, x1)
-        out = self.out1(y1)
         return out
 
         

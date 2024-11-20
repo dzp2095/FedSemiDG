@@ -134,7 +134,8 @@ class EMA(HookBase):
         self.decay = cfg["train"]["ema_decay"]
 
     def before_train(self):
-        self.trainer.ema_model = ModelEMA(self.trainer.device, self.trainer.model, self.decay)
+        if self.trainer.local_teacher is None:
+            self.trainer.local_teacher = ModelEMA(self.trainer.device, self.trainer.model, self.decay)
 
     def after_step(self):
-        self.trainer.ema_model.update(self.trainer.model)
+        self.trainer.local_teacher.update(self.trainer.model)

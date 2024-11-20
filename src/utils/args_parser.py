@@ -19,6 +19,8 @@ def args_parser():
     parser.add_argument('--labeled_clients', type=str, nargs='+', default=None, help='labeled clients')
     parser.add_argument('--unseen_client', type=str, default=None, help='unseen client')
     parser.add_argument('--use_ga', action='store_true', help='Whether to use GA, default is False')
+    parser.add_argument('--fp_rate', type=float, default=None, help='feature dropping rate')
+    parser.add_argument('--feature_loss_weight', type=float, default=None, help='feature loss weight')
     args, unknown = parser.parse_known_args()
     return args
 
@@ -36,4 +38,11 @@ def args2cfg(cfg, args):
     if args.use_ga is not None:
         cfg['fl']['use_ga'] = args.use_ga
         print(args.use_ga)
+    
+    if args.fp_rate is not None:
+        cfg['model']['fp_rate'] = args.fp_rate
+    
+    if args.feature_loss_weight is not None:
+        cfg['train']['feature_loss_weight'] = args.feature_loss_weight
+
     return cfg

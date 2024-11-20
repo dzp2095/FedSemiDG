@@ -32,12 +32,15 @@ class SemiTrainer(TrainerBase):
         else:
             raise NotImplementedError(f"Task {task} not supported")
 
-        self.ema_model = None
+        self.local_teacher = None
+        self.global_teacher = None
+
             
     def build_model(self):
         num_channels = self.cfg["model"]["num_channels"]
         num_classes = self.cfg["model"]["num_classes"]
-        self.model = UNet(num_channels, num_classes)
+        fp_rate = self.cfg["model"]["fp_rate"]
+        self.model = UNet(num_channels, num_classes, fp_rate = fp_rate)
     
     def init_dataloader(self):
         batch_size = self.cfg["train"]["batch_size"]
@@ -91,6 +94,12 @@ class SemiTrainer(TrainerBase):
         return ret
     
     def before_train(self):
+        self.global_teacher = copy.deepcopy(self.model)
+        self.param_keys = [k for k, _ in self.global_teacher.named_parameters()]
+        self.buffer_keys = [k for k, _ in self.global_teacher.named_buffers()]
+        for p in self.global_teacher.parameters():
+            p.requires_grad_(False)
+        self.global_teacher.eval()
         return super().before_train()
 
     def after_train(self):
@@ -193,18 +202,43 @@ class SemiTrainer(TrainerBase):
 
         data = torch.cat((lb_x, ulb_s), dim=0)
         lb_sz = lb_x.size(0)
-        output = self.model(data)
 
-        lb_y = F.one_hot(lb_y.long(), num_classes=output.shape[1]).permute(0, 3, 1, 2).float().to(device=self.device)
-
+        epsilon = 1e-8
         # generate pseudo labels
         with torch.no_grad():
-            ulb_logit = self.ema_model.ema(ulb_w)
-            ulb_prob = torch.softmax(ulb_logit, dim=1)
-            ulb_y_conf, ulb_y = torch.max(ulb_prob, dim=1)
-            ulb_y_one_hot = F.one_hot(ulb_y, num_classes=ulb_logit.shape[1]).permute(0, 3, 1, 2).float()
+            # Get the outputs from the local and global teacher models
+            ulb_w_local_outputs = self.local_teacher.ema(ulb_w)
+            ulb_w_global_outputs = self.global_teacher(ulb_w)
+            
+            # Apply softmax to get probabilities for each class
+            ulb_w_local_probs = torch.softmax(ulb_w_local_outputs, dim=1)
+            ulb_w_global_probs = torch.softmax(ulb_w_global_outputs, dim=1)
+            
+            # Get predicted classes and confidence for each model
+            ulb_w_local_conf, ulb_w_local_pred = torch.max(ulb_w_local_probs, dim=1)
+            ulb_w_global_conf, ulb_w_global_pred = torch.max(ulb_w_global_probs, dim=1)
+            
+            # Create a mask where local model has higher confidence
+            local_higher_conf_mask = ulb_w_local_conf >= ulb_w_global_conf
+            
+            # Select predictions based on higher confidence
+            ulb_y = torch.where(local_higher_conf_mask, ulb_w_local_pred, ulb_w_global_pred)
+            ulb_y_conf = torch.where(local_higher_conf_mask, ulb_w_local_conf, ulb_w_global_conf)
+            
+            # Convert predicted class indices to one-hot encoding
+            ulb_y_one_hot = F.one_hot(ulb_y, num_classes=ulb_w_local_outputs.shape[1]).permute(0, 3, 1, 2).float()
+            
+            # Create a mask where confidence is greater than the threshold
             ulb_y_mask = ulb_y_conf.ge(threshold).float()
-
+        # feature loss
+        feature_loss_weight = self.cfg['train']['feature_loss_weight']
+        if feature_loss_weight > 0:
+            output, feature, feature_p = self.model(data)
+            feature_loss = F.mse_loss(feature, feature_p)
+        else:
+            output = self.model(data)
+            feature_loss = 0
+        lb_y = F.one_hot(lb_y.long(), num_classes=output.shape[1]).permute(0, 3, 1, 2).float().to(device=self.device)
         output_lb_x, output_ulb_s = output[:lb_sz], output[lb_sz:]
         # calculate supervised loss
         dice_ce_loss_fn = DiceCELoss(softmax=True)
@@ -216,7 +250,7 @@ class SemiTrainer(TrainerBase):
         # calculate masked dice loss for each class    
         unsup_loss += masked_dice_loss_fn(output_ulb_s, ulb_y_one_hot, ulb_y_mask.unsqueeze(1))
 
-        loss = sup_loss + unsup_loss
+        loss = sup_loss + unsup_loss + feature_loss_weight * feature_loss
         self.loss_logger.update(loss=loss)
         self.metric_logger.update(loss=loss)
 
@@ -228,23 +262,49 @@ class SemiTrainer(TrainerBase):
         self.model.train()
         self.model.to(self.device)
         threshold = self.cfg['train']['pseudo_label_threshold'] 
+        feature_loss_weight = self.cfg['train']['feature_loss_weight']
 
         _, lb_x, lb_y = next(self._labeled_data_iter)
         _, ulb_w, ulb_s = next(self._unlabeled_data_iter)
         lb_y = lb_y.permute(0, 3, 1, 2).float()
 
         lb_x, lb_y, ulb_w, ulb_s = lb_x.to(self.device), lb_y.to(self.device), ulb_w.to(self.device), ulb_s.to(self.device)
-        
+        epsilon = 1e-8
         # generate pseudo labels
         with torch.no_grad():
-            ulb_logit = self.ema_model.ema(ulb_w)
-            ulb_prob = ulb_logit.sigmoid()
-            ulb_y = ulb_prob.ge(0.5).float()
-            ulb_y_mask = ulb_prob.ge(threshold).float() + ulb_prob.lt(1-threshold).float()
+            ulb_w_local_outputs = self.local_teacher.ema(ulb_w)
+            ulb_w_local_probs = torch.sigmoid(ulb_w_local_outputs).clamp(min=epsilon, max=1 - epsilon)
+            ulb_w_global_outputs = self.global_teacher(ulb_w)
+            ulb_w_global_probs = torch.sigmoid(ulb_w_global_outputs).clamp(min=epsilon, max=1 - epsilon)
+
+            # Compute confidence for local and global probabilities
+            ulb_w_local_conf = torch.abs(ulb_w_local_probs - 0.5)
+            ulb_w_global_conf = torch.abs(ulb_w_global_probs - 0.5)
+            
+            # Create a mask where local has higher confidence
+            local_higher_conf_mask = ulb_w_local_conf >= ulb_w_global_conf
+
+            # Select the probabilities with higher confidence
+            ulb_w_selected_probs = torch.where(local_higher_conf_mask, ulb_w_local_probs, ulb_w_global_probs)
+            
+            # Generate pseudo labels based on selected probabilities
+            ulb_y = ulb_w_selected_probs.ge(0.5).float()
+            
+            # Create a mask where selected probabilities satisfy the threshold condition
+            ulb_y_mask = torch.logical_or(
+                ulb_w_selected_probs.ge(threshold),
+                ulb_w_selected_probs.le(1 - threshold)
+            ).float()
 
         data = torch.cat((lb_x, ulb_s), dim=0)
         lb_sz = lb_x.size(0)
-        output = self.model(data)
+        # perturbed feature reconstruction loss
+        if feature_loss_weight > 0:
+            output, feature, feature_p = self.model(data)
+            feature_loss = F.mse_loss(feature, feature_p)
+        else:
+            output = self.model(data)
+            feature_loss = 0
         output_lb_x, output_ulb_s = output[:lb_sz], output[lb_sz:]
         # calculate supervised loss
         dice_ce_loss_fn = DiceCELoss(sigmoid=True)
@@ -257,7 +317,7 @@ class SemiTrainer(TrainerBase):
         for i in range(output_ulb_s.size(1)):             
             unsup_loss += masked_dice_loss_fn(output_ulb_s[:, i, :, :].unsqueeze(1), ulb_y[:, i, :, :].unsqueeze(1), ulb_y_mask[:, i, :, :].unsqueeze(1))
         
-        loss = sup_loss + unsup_loss
+        loss = sup_loss + unsup_loss + feature_loss_weight * feature_loss
         self.loss_logger.update(loss=loss)
         self.metric_logger.update(loss=loss)
 
