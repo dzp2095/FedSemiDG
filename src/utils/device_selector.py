@@ -15,8 +15,8 @@ def get_free_gpu(gpu_exclude_list=[]):
 
 def get_free_device_name(gpu_exclude_list=[]):
     if (torch.cuda.is_available() and args.gpu):
-        gpu = get_free_gpu(gpu_exclude_list=gpu_exclude_list)
-        logging.info(f'Using GPU: {gpu}')
-        return f'cuda:{gpu}'
+        # gpu = get_free_gpu(gpu_exclude_list=gpu_exclude_list)
+        # logging.info(f'Using GPU: {gpu}')
+        return f'cuda'
     else:
         return 'cpu'

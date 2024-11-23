@@ -27,15 +27,20 @@ class SemiTrainer(TrainerBase):
             self.run_step = self._run_step_prostate
         elif task == 'cardiac':
             self.run_step = self._run_step_cardiac
+            # Initialize the uncertainty threshold as the ln4 for 4-class classification
+            # self.uncertain_threshold = 1.3862
         elif task =='spine':
             self.run_step = self._run_step_spine
+            # Initialize the uncertainty threshold as the ln2 for binary classification
+            # self.uncertain_threshold = 0.6931
         else:
             raise NotImplementedError(f"Task {task} not supported")
 
-        self.local_teacher = None
-        self.global_teacher = None
+        self.dynamic_teacher = None
+        self.fixed_teacher = None
+        self.uncertain_threshold = 0
 
-            
+
     def build_model(self):
         num_channels = self.cfg["model"]["num_channels"]
         num_classes = self.cfg["model"]["num_classes"]
@@ -94,12 +99,12 @@ class SemiTrainer(TrainerBase):
         return ret
     
     def before_train(self):
-        self.global_teacher = copy.deepcopy(self.model)
-        self.param_keys = [k for k, _ in self.global_teacher.named_parameters()]
-        self.buffer_keys = [k for k, _ in self.global_teacher.named_buffers()]
-        for p in self.global_teacher.parameters():
+        self.fixed_teacher = copy.deepcopy(self.model)
+        self.param_keys = [k for k, _ in self.fixed_teacher.named_parameters()]
+        self.buffer_keys = [k for k, _ in self.fixed_teacher.named_buffers()]
+        for p in self.fixed_teacher.parameters():
             p.requires_grad_(False)
-        self.global_teacher.eval()
+        self.fixed_teacher.eval()
         return super().before_train()
 
     def after_train(self):
@@ -195,6 +200,10 @@ class SemiTrainer(TrainerBase):
         self.model.train()
         self.model.to(self.device)
         threshold = self.cfg['train']['pseudo_label_threshold'] 
+        uncetrain_ema_decay = self.cfg['train']['uncertain_ema_decay']
+        entropy_start_ratio = self.cfg['train']['entropy_start_ratio']
+        entropy_end_ratio = self.cfg['train']['entropy_end_ratio']
+        entropy_ratio = entropy_start_ratio + (entropy_end_ratio - entropy_start_ratio) * self.iter / self.max_iter
 
         _, lb_x, lb_y = next(self._labeled_data_iter)
         _, ulb_w, ulb_s = next(self._unlabeled_data_iter)
@@ -202,34 +211,6 @@ class SemiTrainer(TrainerBase):
 
         data = torch.cat((lb_x, ulb_s), dim=0)
         lb_sz = lb_x.size(0)
-
-        epsilon = 1e-8
-        # generate pseudo labels
-        with torch.no_grad():
-            # Get the outputs from the local and global teacher models
-            ulb_w_local_outputs = self.local_teacher.ema(ulb_w)
-            ulb_w_global_outputs = self.global_teacher(ulb_w)
-            
-            # Apply softmax to get probabilities for each class
-            ulb_w_local_probs = torch.softmax(ulb_w_local_outputs, dim=1)
-            ulb_w_global_probs = torch.softmax(ulb_w_global_outputs, dim=1)
-            
-            # Get predicted classes and confidence for each model
-            ulb_w_local_conf, ulb_w_local_pred = torch.max(ulb_w_local_probs, dim=1)
-            ulb_w_global_conf, ulb_w_global_pred = torch.max(ulb_w_global_probs, dim=1)
-            
-            # Create a mask where local model has higher confidence
-            local_higher_conf_mask = ulb_w_local_conf >= ulb_w_global_conf
-            
-            # Select predictions based on higher confidence
-            ulb_y = torch.where(local_higher_conf_mask, ulb_w_local_pred, ulb_w_global_pred)
-            ulb_y_conf = torch.where(local_higher_conf_mask, ulb_w_local_conf, ulb_w_global_conf)
-            
-            # Convert predicted class indices to one-hot encoding
-            ulb_y_one_hot = F.one_hot(ulb_y, num_classes=ulb_w_local_outputs.shape[1]).permute(0, 3, 1, 2).float()
-            
-            # Create a mask where confidence is greater than the threshold
-            ulb_y_mask = ulb_y_conf.ge(threshold).float()
         # feature loss
         feature_loss_weight = self.cfg['train']['feature_loss_weight']
         if feature_loss_weight > 0:
@@ -243,6 +224,40 @@ class SemiTrainer(TrainerBase):
         # calculate supervised loss
         dice_ce_loss_fn = DiceCELoss(softmax=True)
         sup_loss = dice_ce_loss_fn(output_lb_x, lb_y)
+        epsilon = 1e-8
+
+        # generate pseudo labels
+        with torch.no_grad():
+            # calculate entropy on labeled data
+            lb_x_probs = torch.softmax(output_lb_x, dim=1)
+            lb_x_entropy = - (lb_x_probs * torch.log(lb_x_probs + epsilon)).sum(dim=1)
+            lb_x_entropy_values = lb_x_entropy.view(-1)
+            lb_x_entropy_threshold = torch.quantile(lb_x_entropy_values, entropy_ratio)
+
+            self.uncertain_threshold = uncetrain_ema_decay * self.uncertain_threshold + (1 - uncetrain_ema_decay) * lb_x_entropy_threshold
+
+            ulb_w_dynamic_outputs = self.dynamic_teacher.ema(ulb_w)
+            ulb_w_fixed_outputs = self.fixed_teacher(ulb_w)
+            
+            # Apply softmax to get probabilities for each class
+            ulb_w_dynamic_probs = torch.softmax(ulb_w_dynamic_outputs, dim=1)
+            ulb_w_fixed_probs = torch.softmax(ulb_w_fixed_outputs, dim=1)
+            ulb_probs = (ulb_w_dynamic_probs + ulb_w_fixed_probs) / 2
+            ulb_y_conf, ulb_y = torch.max(ulb_probs, dim=1)
+
+            #calculate entropy
+            entropy_dynamic = - (ulb_w_dynamic_probs * torch.log(ulb_w_dynamic_probs + epsilon)).sum(dim=1)
+            entropy_fixed = - (ulb_w_fixed_probs * torch.log(ulb_w_fixed_probs + epsilon)).sum(dim=1)
+            ulb_entropy_mean = (entropy_dynamic + entropy_fixed) / 2
+            ulb_y_mask = ulb_entropy_mean.le(self.uncertain_threshold).float()
+            
+            # Convert predicted class indices to one-hot encoding
+            ulb_y_one_hot = F.one_hot(ulb_y, num_classes=ulb_w_dynamic_outputs.shape[1]).permute(0, 3, 1, 2).float()
+            
+            # Create a mask where confidence is greater than the threshold
+            # ulb_y_mask = ulb_y_conf.ge(threshold).float()
+            # ulb_y_mask = torch.logical_and(ulb_y_mask, ulb_uncertain_mask)
+
         # calculate consistency loss
         ce_loss_fn = torch.nn.CrossEntropyLoss(reduction='none')
         masked_dice_loss_fn = MaskedDiceLoss(softmax=True)
@@ -263,6 +278,10 @@ class SemiTrainer(TrainerBase):
         self.model.to(self.device)
         threshold = self.cfg['train']['pseudo_label_threshold'] 
         feature_loss_weight = self.cfg['train']['feature_loss_weight']
+        uncetrain_ema_decay = self.cfg['train']['uncertain_ema_decay']
+        entropy_start_ratio = self.cfg['train']['entropy_start_ratio']
+        entropy_end_ratio = self.cfg['train']['entropy_end_ratio']
+        entropy_ratio = entropy_start_ratio + (entropy_end_ratio - entropy_start_ratio) * self.iter / self.max_iter
 
         _, lb_x, lb_y = next(self._labeled_data_iter)
         _, ulb_w, ulb_s = next(self._unlabeled_data_iter)
@@ -270,34 +289,10 @@ class SemiTrainer(TrainerBase):
 
         lb_x, lb_y, ulb_w, ulb_s = lb_x.to(self.device), lb_y.to(self.device), ulb_w.to(self.device), ulb_s.to(self.device)
         epsilon = 1e-8
-        # generate pseudo labels
-        with torch.no_grad():
-            ulb_w_local_outputs = self.local_teacher.ema(ulb_w)
-            ulb_w_local_probs = torch.sigmoid(ulb_w_local_outputs).clamp(min=epsilon, max=1 - epsilon)
-            ulb_w_global_outputs = self.global_teacher(ulb_w)
-            ulb_w_global_probs = torch.sigmoid(ulb_w_global_outputs).clamp(min=epsilon, max=1 - epsilon)
-
-            # Compute confidence for local and global probabilities
-            ulb_w_local_conf = torch.abs(ulb_w_local_probs - 0.5)
-            ulb_w_global_conf = torch.abs(ulb_w_global_probs - 0.5)
-            
-            # Create a mask where local has higher confidence
-            local_higher_conf_mask = ulb_w_local_conf >= ulb_w_global_conf
-
-            # Select the probabilities with higher confidence
-            ulb_w_selected_probs = torch.where(local_higher_conf_mask, ulb_w_local_probs, ulb_w_global_probs)
-            
-            # Generate pseudo labels based on selected probabilities
-            ulb_y = ulb_w_selected_probs.ge(0.5).float()
-            
-            # Create a mask where selected probabilities satisfy the threshold condition
-            ulb_y_mask = torch.logical_or(
-                ulb_w_selected_probs.ge(threshold),
-                ulb_w_selected_probs.le(1 - threshold)
-            ).float()
 
         data = torch.cat((lb_x, ulb_s), dim=0)
         lb_sz = lb_x.size(0)
+
         # perturbed feature reconstruction loss
         if feature_loss_weight > 0:
             output, feature, feature_p = self.model(data)
@@ -309,6 +304,38 @@ class SemiTrainer(TrainerBase):
         # calculate supervised loss
         dice_ce_loss_fn = DiceCELoss(sigmoid=True)
         sup_loss = dice_ce_loss_fn(output_lb_x, lb_y)
+
+        # generate pseudo labels
+        with torch.no_grad():
+            # calculate entropy on labeled data
+            lb_x_probs = torch.sigmoid(output_lb_x).clamp(min=epsilon, max=1 - epsilon)
+            lb_x_entropy = - (lb_x_probs * torch.log(lb_x_probs + epsilon) + (1 - lb_x_probs) * torch.log(1 - lb_x_probs + epsilon))
+            ulb_entropy_values = lb_x_entropy.view(-1)
+            lb_x_entropy_threshold = torch.quantile(ulb_entropy_values, entropy_ratio)
+
+            self.uncertain_threshold = uncetrain_ema_decay * self.uncertain_threshold + (1 - uncetrain_ema_decay) * lb_x_entropy_threshold
+
+            ulb_w_dynamic_outputs = self.dynamic_teacher.ema(ulb_w)
+            ulb_w_fixed_outputs = self.fixed_teacher(ulb_w)
+
+            ulb_w_dynamic_probs = torch.sigmoid(ulb_w_dynamic_outputs).clamp(min=epsilon, max=1 - epsilon)
+            ulb_w_fixed_probs = torch.sigmoid(ulb_w_fixed_outputs).clamp(min=epsilon, max=1 - epsilon)
+
+            ulb_probs = (ulb_w_dynamic_probs + ulb_w_fixed_probs) / 2
+            ulb_y = ulb_probs.ge(0.5).float()
+            
+            entropy_dynamic = - (ulb_w_dynamic_probs * torch.log(ulb_w_dynamic_probs + epsilon) + (1 - ulb_w_dynamic_probs) * torch.log(1 - ulb_w_dynamic_probs + epsilon))
+            entropy_fixed = - (ulb_w_fixed_probs * torch.log(ulb_w_fixed_probs + epsilon) + (1 - ulb_w_fixed_probs) * torch.log(1 - ulb_w_fixed_probs + epsilon))
+            ulb_entropy_mean = (entropy_dynamic + entropy_fixed) / 2
+            ulb_y_mask = ulb_entropy_mean.le(self.uncertain_threshold).float()
+
+            # Create a mask where selected probabilities satisfy the threshold condition
+            # ulb_y_mask = torch.logical_or(
+            #     ulb_probs.ge(threshold),
+            #     ulb_probs.le(1 - threshold)
+            # ).float()
+            # ulb_y_mask = torch.logical_and(ulb_y_mask, ulb_uncertain_mask)
+
         # calculate consistency loss
         ce_loss_fn = torch.nn.BCEWithLogitsLoss(reduction='none')
         masked_dice_loss_fn = MaskedDiceLoss(sigmoid=True)

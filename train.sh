@@ -101,7 +101,7 @@ python3 local_train.py \
     --trainer "semi" 
 
 python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/cardiac/fl_run_conf.yaml" \
+    --config "/zhipengdeng/project/fed_semi_dev/configs/cardiac/fl_run_conf.yaml" \
     --run_name "fl_semi_labeled_1_2_3_unseen_4" \
     --train_path "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/" \
     --test_path "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/" \
@@ -131,7 +131,7 @@ python3 fl_train.py \
     --trainer "semi" 
 
 python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/spine/fl_run_conf.yaml" \
+    --config "/zhipengdeng/project/fed_semi_dev/configs/spine/fl_run_conf.yaml" \
     --run_name "fl_ga_spine" \
     --train_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
     --test_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \

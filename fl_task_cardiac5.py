@@ -6,10 +6,10 @@ all_unseen_sites = [4, 3, 2, 1]
 
 task = "cardiac"
 
-feature_loss_weight = [0.1, 0.3, 0.5]
-fp_rate = [0.3, 0.5]
+feature_loss_weight = [0]
+fp_rate = [0]
 entropy_start_ratio = [0.1, 0.2, 0.3]
-entropy_end_ratio = [0.5]
+entropy_end_ratio = [0.5, 0.6, 0.7, 0.8]
 
 for flw, fpr, esr, eer in itertools.product(feature_loss_weight, fp_rate, entropy_start_ratio, entropy_end_ratio):
     for i in range(len(all_labeled_sites)):

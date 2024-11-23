@@ -21,6 +21,9 @@ def args_parser():
     parser.add_argument('--use_ga', action='store_true', help='Whether to use GA, default is False')
     parser.add_argument('--fp_rate', type=float, default=None, help='feature dropping rate')
     parser.add_argument('--feature_loss_weight', type=float, default=None, help='feature loss weight')
+    parser.add_argument('--entropy_start_ratio', type=float, default=None, help='uncertain ratio')
+    parser.add_argument('--entropy_end_ratio', type=float, default=None, help='uncertain ratio')
+
     args, unknown = parser.parse_known_args()
     return args
 
@@ -45,4 +48,10 @@ def args2cfg(cfg, args):
     if args.feature_loss_weight is not None:
         cfg['train']['feature_loss_weight'] = args.feature_loss_weight
 
+    if args.entropy_start_ratio is not None:
+        cfg['train']['entropy_start_ratio'] = args.entropy_start_ratio
+
+    if args.entropy_end_ratio is not None:
+        cfg['train']['entropy_end_ratio'] = args.entropy_end_ratio
+    
     return cfg
