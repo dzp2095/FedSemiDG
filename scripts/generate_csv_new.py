@@ -161,3 +161,44 @@ for domain in domain_names.keys():
     unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
     train_df.to_csv(f'{client_folder}/all.csv', index=False)
 
+# 5. Bladder Cancer Task
+config = yaml.safe_load(open(filepath.joinpath("../configs/bladder/scripts_conf.yaml")))
+target_folder = config.get("target_folder", "~/bladder/fed_semi")
+labeled_slice_num = config.get("labeled_slice_num", 20)
+center2client = {'Center1':1, 'Center2':2, 'Center3':3, 'Center4':4}
+
+for client in center2client.values():
+    client_folder = f'{target_folder}/client_{client}'
+    # generate the labeled/unlabeled split
+    train_df = pd.read_csv(f'{client_folder}/train.csv')
+    # data in test.csv is unlabeled
+    test_df = pd.read_csv(f'{client_folder}/test.csv')
+    
+    # notice: labeled data should be selected from consecutive slices within the same case
+    all_cases = list(set(train_df['image_id'].str.split(r'_').apply(lambda x: x[0]).to_list()))
+    # Randomly shuffle cases
+    random.shuffle(all_cases)
+
+    labeled_slices = []
+    total_slices = 0
+    
+    for case in all_cases:
+        # Select all slices from the current case
+        case_slices = train_df[train_df['image_id'].str.startswith(case)]
+        
+        # Check if adding these slices exceeds the required labeled_slice_num
+        if total_slices + len(case_slices) > labeled_slice_num:
+            remaining_slices = labeled_slice_num - total_slices
+            labeled_slices.append(case_slices.sample(n=remaining_slices, random_state=1))
+            break
+        else:
+            labeled_slices.append(case_slices)
+            total_slices += len(case_slices)
+
+    labeled_df = pd.concat(labeled_slices)
+    labeled_df.to_csv(f'{client_folder}/labeled.csv', index=False)
+
+    unlabeled_df = train_df[~train_df['image_id'].isin(labeled_df['image_id'])]
+    unlabeled_df = pd.concat([unlabeled_df, test_df])
+    unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
+    train_df.to_csv(f'{client_folder}/all.csv', index=False)

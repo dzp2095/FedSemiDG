@@ -29,6 +29,8 @@ class SupervisedTrainer(TrainerBase):
             self.run_step = self._run_step_cardiac
         elif task =='spine':
             self.run_step = self._run_step_spine
+        elif task == 'bladder':
+            self.run_step = self._run_step_bladder
             
     def build_model(self):
         num_channels = self.cfg["model"]["num_channels"]
@@ -38,7 +40,7 @@ class SupervisedTrainer(TrainerBase):
     def init_dataloader(self):
         batch_size = self.cfg["train"]["batch_size"]
         factory = TaskRegistry.get_factory(self.cfg['task'])
-        self.cfg['dataset']['train'] = os.path.join(self.cfg['dataset']['train'], 'labeled.csv')
+        self.cfg['dataset']['train'] = os.path.join(self.cfg['dataset']['train'], 'all.csv')
         dataset = factory.create_dataset(mode='train', is_labeled = True, cfg=self.cfg)
 
         self._train_data_num = len(dataset)
@@ -154,6 +156,26 @@ class SupervisedTrainer(TrainerBase):
         mask = F.one_hot(mask, num_classes=output.shape[1]).permute(0, 3, 1, 2).float().to(device=self.device)
 
         loss_fn = DiceCELoss(softmax=True)
+        loss = loss_fn(output, mask)
+        
+        self.loss_logger.update(loss=loss)
+        self.metric_logger.update(loss=loss)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+    def _run_step_bladder(self):
+        self.model.train()
+        self.model.to(self.device)
+        _, image, mask = next(self._data_iter)
+        image = image.to(self.device)
+        # b,h,w to b,c,h,w 
+        mask = mask.unsqueeze(1).float().to(device=self.device)
+
+        output = self.model(image)
+        loss_fn = DiceCELoss(sigmoid=True)
+
         loss = loss_fn(output, mask)
         
         self.loss_logger.update(loss=loss)

@@ -146,3 +146,40 @@ python3 local_train.py \
     --train_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/client_4" \
     --test_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
     --trainer "semi" 
+
+
+# bladder task
+python3 fl_train.py \
+    --config "/zhipengdeng/project/fed_semi/configs/bladder/fl_run_conf.yaml" \
+    --run_name "fl_fully_bladder" \
+    --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
+    --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
+    --labeled_clients client_1 client_2 client_3 \
+    --unseen_client client_4 \
+    --trainer "supervised" 
+
+python3 fl_train.py \
+    --config "/zhipengdeng/project/fed_semi/configs/bladder/fl_run_conf.yaml" \
+    --run_name "fl_semi_bladder" \
+    --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
+    --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
+    --labeled_clients client_1 client_2 client_3 \
+    --unseen_client client_4 \
+    --trainer "semi" 
+
+python3 fl_train.py \
+    --config "/zhipengdeng/project/fed_semi_dev/configs/bladder/fl_run_conf.yaml" \
+    --run_name "fl_ga_bladder" \
+    --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
+    --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
+    --labeled_clients client_1 client_2 client_3 \
+    --unseen_client client_4 \
+    --trainer "semi" \
+    --use_ga
+
+python3 local_train.py \
+    --config "/zhipengdeng/project/fed_semi/configs/bladder/run_conf.yaml" \
+    --run_name "localized_semi_bladder_client_4" \
+    --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/client_4" \
+    --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
+    --trainer "supervised" 

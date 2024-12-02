@@ -98,7 +98,7 @@ for mask_file in test_mask_files + train_mask_files:
     Path(target_mask_folder).mkdir(parents=True, exist_ok=True)
     Path(target_mask_vis_folder).mkdir(parents=True, exist_ok=True)
     
-            # count the number of slices with labels
+    # count the number of slices with labels
     slices_with_labels_per_time = np.count_nonzero(np.any(mask_data, axis=(0, 1)))
 
     # count the number of time points with labels
