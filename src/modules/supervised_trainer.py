@@ -40,7 +40,7 @@ class SupervisedTrainer(TrainerBase):
     def init_dataloader(self):
         batch_size = self.cfg["train"]["batch_size"]
         factory = TaskRegistry.get_factory(self.cfg['task'])
-        self.cfg['dataset']['train'] = os.path.join(self.cfg['dataset']['train'], 'all.csv')
+        self.cfg['dataset']['train'] = os.path.join(self.cfg['dataset']['train'], 'labeled.csv')
         dataset = factory.create_dataset(mode='train', is_labeled = True, cfg=self.cfg)
 
         self._train_data_num = len(dataset)

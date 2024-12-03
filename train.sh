@@ -182,4 +182,4 @@ python3 local_train.py \
     --run_name "localized_semi_bladder_client_4" \
     --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/client_4" \
     --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
-    --trainer "supervised" 
+    --trainer "semi" 

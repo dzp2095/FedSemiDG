@@ -7,24 +7,21 @@ all_unseen_sites = [4, 3, 2, 1]
 task = "bladder"
 data_dir = "bladder"
 
-runtime = 3
+for i in range(len(all_labeled_sites)):
+    labeled_sites = all_labeled_sites[i]
+    unseen_site = all_unseen_sites[i]
+    run_name = f"fl_{task}_full_labeled_{labeled_sites}_unseen_{unseen_site}"
+    labeled_clients = ["client_" + str(client_id) for client_id in labeled_sites]
+    unseen_client = f'client_{unseen_site}'
+    command = [
+        "python3", "fl_train.py",
+        "--config", f"/zhipengdeng/project/fed_semi/configs/{task}/fl_run_conf.yaml",
+        "--run_name", run_name,
+        "--train_path", f"/storage/zhipengdeng/data/segmentation/{data_dir}/fed_semi",
+        "--test_path", f"/storage/zhipengdeng/data/segmentation/{data_dir}/fed_semi",
+        "--trainer", "supervised",
+        "--unseen_client", unseen_client,
+        "--labeled_clients"
+    ] + labeled_clients
 
-for run in range(runtime):
-    for i in range(len(all_labeled_sites)):
-        labeled_sites = all_labeled_sites[i]
-        unseen_site = all_unseen_sites[i]
-        run_name = f"fl_{task}_full_labeled_{labeled_sites}_unseen_{unseen_site}_run_{run}"
-        labeled_clients = ["client_" + str(client_id) for client_id in labeled_sites]
-        unseen_client = f'client_{unseen_site}'
-        command = [
-            "python3", "fl_train.py",
-            "--config", f"/zhipengdeng/project/fed_semi/configs/{task}/fl_run_conf.yaml",
-            "--run_name", run_name,
-            "--train_path", f"/storage/zhipengdeng/data/segmentation/{data_dir}/fed_semi",
-            "--test_path", f"/storage/zhipengdeng/data/segmentation/{data_dir}/fed_semi",
-            "--trainer", "supervised",
-            "--unseen_client", unseen_client,
-            "--labeled_clients"
-        ] + labeled_clients
-
-        subprocess.run(command)
+    subprocess.run(command)
