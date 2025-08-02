@@ -80,7 +80,7 @@ class EvalHook(HookBase):
                 dataset = self.factory.create_dataset(mode='test', cfg=cfg)
                 data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"], shuffle=False, 
                                                         num_workers=8, pin_memory=True)
-                device = get_free_device_name(gpu_exclude_list=self.cfg["train"]["gpu_exclude"])
+                device = get_free_device_name()
                 model = self.trainer.model
                 
                 save_start = self.cfg['local']['save_start']

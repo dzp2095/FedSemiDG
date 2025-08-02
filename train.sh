@@ -183,3 +183,40 @@ python3 local_train.py \
     --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/client_4" \
     --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
     --trainer "semi" 
+# colon task
+
+python3 local_train.py \
+    --config /home/dengzhipeng/project/fed_semi/configs/colon/run_conf.yaml \
+    --run_name localized_labelonly_colon_client_1_run_1 \
+    --train_path /home/dengzhipeng/data/segmentation/colon/fed_semi/client_1 \
+    --test_path /home/dengzhipeng/data/segmentation/colon/fed_semi/ \
+    --trainer supervised \
+    --gpu_pool 0
+
+python3 local_train.py \
+    --config /home/dengzhipeng/project/fed_semi/configs/colon/run_conf.yaml \
+    --run_name localized_semi_colon_client_1_run_1 \
+    --train_path /home/dengzhipeng/data/segmentation/colon/fed_semi/client_1 \
+    --test_path /home/dengzhipeng/data/segmentation/colon/fed_semi/ \
+    --trainer semi \
+    --gpu_pool 0
+
+
+#!/bin/bash
+
+# This script corresponds to the first iteration of all loops.
+
+python3 fl_train.py \
+    --config /home/dengzhipeng/project/fed_semi/configs/colon/fl_run_conf.yaml \
+    --run_name "fl_colon_ours_dynamic_flw_0.3_fpr_0.3_esr_0.15_eer_0.3_labeled_[1, 2, 3]_unseen_4" \
+    --train_path /home/dengzhipeng/data/segmentation/colon/fed_semi \
+    --test_path /home/dengzhipeng/data/segmentation/colon/fed_semi \
+    --trainer semi \
+    --use_ga \
+    --unseen_client client_4 \
+    --labeled_clients client_1 client_2 client_3 \
+    --feature_loss_weight 0.3 \
+    --fp_rate 0.3 \
+    --entropy_start_ratio 0.15 \
+    --entropy_end_ratio 0.3 \
+    --gpu_pool 0

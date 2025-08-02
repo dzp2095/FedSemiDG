@@ -110,12 +110,8 @@ class TrainerBase:
         self.iter = 0
         self.start_iter = 0
         self.max_iter = self.cfg["train"]["max_iter"]
-        if self.cfg["train"]["device"] is not None:
-            self.device = self.cfg["train"]["device"]
-        else:
-            gpu_exclude = self.cfg["train"]["gpu_exclude"]
-            self.device = get_free_device_name(gpu_exclude_list=gpu_exclude)
-            
+        self.device = get_free_device_name()
+
         self.build_model()
         self.model = self.model.to(self.device)
 
@@ -139,7 +135,7 @@ class TrainerBase:
 
     def build_schedular(self, optimizer):
         self.lr_scheduler = ReduceLROnPlateau(optimizer, factor=self.cfg["train"]["lr_scheduler"]["factor"], 
-        patience=self.cfg["train"]["lr_scheduler"]["patience"], verbose=True, min_lr=self.cfg["train"]["lr_scheduler"]["min_lr"])
+        patience=self.cfg["train"]["lr_scheduler"]["patience"], min_lr=self.cfg["train"]["lr_scheduler"]["min_lr"])
     
 
     def init_dataloader(self):

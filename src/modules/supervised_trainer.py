@@ -8,6 +8,8 @@ import os
 from src.modules.defaults import TrainerBase
 from src.modules import hooks
 from src.model.unet import UNet
+from src.model.mit_PLD_b4 import mit_PLD_b4
+
 from src.tasks.task_registry import TaskRegistry
 from src.datasets.sampler import TrainingSampler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -31,11 +33,20 @@ class SupervisedTrainer(TrainerBase):
             self.run_step = self._run_step_spine
         elif task == 'bladder':
             self.run_step = self._run_step_bladder
+        elif task == "colon":
+            self.run_step = self._run_step_colon
+        else:
+            raise NotImplementedError(f"Task {task} not supported")
             
     def build_model(self):
-        num_channels = self.cfg["model"]["num_channels"]
+        task = self.cfg['task']
         num_classes = self.cfg["model"]["num_classes"]
-        self.model = UNet(num_channels, num_classes)
+        if task == "colon":
+            self.model = mit_PLD_b4(class_num=num_classes)
+        else:
+            num_channels = self.cfg["model"]["num_channels"]
+            num_classes = self.cfg["model"]["num_classes"]
+            self.model = UNet(num_channels, num_classes)
     
     def init_dataloader(self):
         batch_size = self.cfg["train"]["batch_size"]
@@ -177,6 +188,17 @@ class SupervisedTrainer(TrainerBase):
         loss_fn = DiceCELoss(sigmoid=True)
 
         loss = loss_fn(output, mask)
+        
+    def _run_step_colon(self):
+        self.model.train()
+        self.model.to(self.device)
+        _, images, masks = next(self._data_iter)
+        images = images.to(self.device)  # B,C,H,W
+        masks = (masks > 0).float().unsqueeze(1).to(self.device)
+
+        output = self.model(images)
+        loss_fn = DiceCELoss(sigmoid=True)
+        loss = loss_fn(output, masks)
         
         self.loss_logger.update(loss=loss)
         self.metric_logger.update(loss=loss)

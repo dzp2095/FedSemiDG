@@ -38,7 +38,7 @@ class Server:
 
         self.metric_logger = MetricLogger()
         self.cfg = copy.deepcopy(cfg)
-        self.device = get_free_device_name(gpu_exclude_list=self.cfg["train"]["gpu_exclude"])
+        self.device = get_free_device_name()
 
         if self.cfg["fl"]["wandb_global"]:
             self.wandb_init()
@@ -183,7 +183,7 @@ class Server:
         test_csv = os.path.join(root_dir, self.unseen_client, 'all.csv')
         cfg['dataset']['test'] = test_csv
         dataset = self.factory.create_dataset(mode='test', cfg=cfg)
-        data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"]*2, shuffle=False, 
+        data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.cfg["train"]["batch_size"], shuffle=False, 
                                                 num_workers=8, pin_memory=True)
         
         if self.r >= self.result_save_start_round and (self.r - self.result_save_start_round) % self.result_save_interval == 0:

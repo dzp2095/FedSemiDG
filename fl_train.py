@@ -1,5 +1,11 @@
 import yaml
 import logging
+import os
+from zoneinfo import ZoneInfo  # Python 3.9+
+from src.utils.args_parser import args, args2cfg
+
+if args.gpu_pool is not None:
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_pool
 
 import random
 import numpy as np
@@ -20,15 +26,18 @@ if args.deterministic:
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-now = str(datetime.timestamp(datetime.now()))
+task_name = os.path.basename(os.path.dirname(args.config))
+now = datetime.now(ZoneInfo("Asia/Shanghai"))
+date_time = now.strftime("%Y%m%d_%H%M%S")
+run_name = args.run_name.lower()
 
-log_dir = Path(f'/storage/zhipengdeng/data/segmentation/fed_semi/log')
-Path(log_dir).mkdir(parents=True, exist_ok=True)
-logging.basicConfig(filename=f'{log_dir}/log_{args.run_name}_{now}.txt',
+Path(f'./log/{task_name}/{run_name}').mkdir(parents=True, exist_ok=True)
+logging.basicConfig(filename=f'log/{task_name}/{run_name}/{date_time}.log',
                     filemode='a',
-                    format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-                    datefmt='%Y-%m-%d:%H:%M:%S',
-                    level=logging.INFO)
+                    datefmt='%Y-%m-%d %H:%M:%S',
+                    level=logging.INFO,
+                    format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s')
+
 
 if __name__ == "__main__":
 

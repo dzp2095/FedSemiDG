@@ -14,11 +14,15 @@ current_dir = Path(__file__).parent
 parent_dir = current_dir.parent
 sys.path.append(str(parent_dir))
 
-filepath = Path(__file__).resolve().parent
-config = yaml.safe_load(open(filepath.joinpath("../configs/cardiac/scripts_conf.yaml")))
+repo_root = Path(__file__).resolve().parent.parent
+cfg_path = repo_root / 'configs' / 'cardiac' / 'scripts.yaml' 
 
-target_folder = config.get("target_folder", "~/cardiac/fed_semi")
-raw_data_folder = config.get("raw_data_folder", f"cardiac/OpenDataset")
+with cfg_path.open() as f:
+    config = yaml.safe_load(f)
+
+target_folder = Path(config.get("target_folder", "~/cardiac/fed_semi")).expanduser()
+raw_data_folder = Path(config.get("raw_data_folder", "cardiac/OpenDataset")).expanduser()
+
 csv_file = pd.read_csv(f'{raw_data_folder}/211230_M&Ms_Dataset_information_diagnosis_opendataset.csv')
 resize = (config.get("resize")['width'], config.get("resize")['height'])
 

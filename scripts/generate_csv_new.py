@@ -13,17 +13,21 @@ current_dir = Path(__file__).parent
 parent_dir = current_dir.parent
 sys.path.append(str(parent_dir))
 
-filepath = Path(__file__).resolve().parent
+repo_root = Path(__file__).resolve().parent.parent
 
 # Description: This script generates the labeled/unlabeled split for the clients in the federated semi-supervised learning setting.
 # 1. Fundus Task
-config = yaml.safe_load(open(filepath.joinpath("../configs/fundus/scripts_conf.yaml")))
 
-target_folder = config.get("target_folder", "~/fundus_dofe/fed_semi")
+cfg_path = repo_root / 'configs' / 'colon' / 'scripts.yaml'
 
-labeled_slice_num = config.get("labeled_slice_num", 10)
+with cfg_path.open() as f:
+    config = yaml.safe_load(f)
 
-domain_names = {1:'DGS', 2:'RIM', 3:'REF', 4:'REF_val'}
+target_folder = config.get("target_folder", "~/colon/fed_semi")
+
+labeled_slice_num = config.get("labeled_slice_num", 20)
+
+domain_names = {1:'kvasir', 2:'cvc_clinic', 3:'cvc_colon', 4:'etis'}
 
 for domain in domain_names.keys():
     client_folder = f'{target_folder}/client_{domain}'
@@ -31,56 +35,63 @@ for domain in domain_names.keys():
     train_df = pd.read_csv(f'{client_folder}/train.csv')
     test_df = pd.read_csv(f'{client_folder}/test.csv')
     data_df = pd.concat([train_df, test_df])
-
-    labeled_df = data_df.sample(n=labeled_slice_num, random_state=1)
+    data_num = len(data_df)
+    labeled_df = data_df.sample(n=min(data_num, labeled_slice_num), random_state=1)
     labeled_df.to_csv(f'{client_folder}/labeled.csv', index=False)
     unlabeled_df = data_df.drop(labeled_df.index)
     unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
     data_df.to_csv(f'{client_folder}/all.csv', index=False)
 
-# 2. Prostate Task
-config = yaml.safe_load(open(filepath.joinpath("../configs/prostate/scripts_conf.yaml")))
-target_folder = config.get("target_folder", "~/prostate_mri/fed_semi")
-labeled_slice_num = config.get("labeled_slice_num", 20)
-domain_names = {1:'BIDMC', 2:'BMC', 3:'HK', 4:'I2CVB', 5:'RUNMC', 6:'UCL'}
+# # 2. Prostate Task
 
-for domain in domain_names.keys():
-    client_folder = f'{target_folder}/client_{domain}'
-    # generate the labeled/unlabeled split
-    train_df = pd.read_csv(f'{client_folder}/train.csv')
-    test_df = pd.read_csv(f'{client_folder}/test.csv')
-    data_df = pd.concat([train_df, test_df])
+# cfg_path = repo_root / 'configs' / 'prostate' / 'scripts.yaml'
+# with cfg_path.open() as f:
+#     config = yaml.safe_load(f)
 
-    # notice: labeled data should be selected from consecutive slices within the same case
-    all_cases = list(set(data_df['image_id'].str.extract(r'(Case\d+)_')[0].to_list()))
-    # Randomly shuffle cases
-    random.shuffle(all_cases)
+# target_folder = config.get("target_folder", "~/prostate_mri/fed_semi")
+# labeled_slice_num = config.get("labeled_slice_num", 20)
+# domain_names = {1:'BIDMC', 2:'BMC', 3:'HK', 4:'I2CVB', 5:'RUNMC', 6:'UCL'}
 
-    labeled_slices = []
-    total_slices = 0
+# for domain in domain_names.keys():
+#     client_folder = f'{target_folder}/client_{domain}'
+#     # generate the labeled/unlabeled split
+#     train_df = pd.read_csv(f'{client_folder}/train.csv')
+#     test_df = pd.read_csv(f'{client_folder}/test.csv')
+#     data_df = pd.concat([train_df, test_df])
+
+#     # notice: labeled data should be selected from consecutive slices within the same case
+#     all_cases = list(set(data_df['image_id'].str.extract(r'(Case\d+)_')[0].to_list()))
+#     # Randomly shuffle cases
+#     random.shuffle(all_cases)
+
+#     labeled_slices = []
+#     total_slices = 0
     
-    for case in all_cases:
-        # Select all slices from the current case
-        case_slices = data_df[data_df['image_id'].str.startswith(case)]
+#     for case in all_cases:
+#         # Select all slices from the current case
+#         case_slices = data_df[data_df['image_id'].str.startswith(case)]
         
-        # Check if adding these slices exceeds the required labeled_slice_num
-        if total_slices + len(case_slices) > labeled_slice_num:
-            remaining_slices = labeled_slice_num - total_slices
-            labeled_slices.append(case_slices.sample(n=remaining_slices, random_state=1))
-            break
-        else:
-            labeled_slices.append(case_slices)
-            total_slices += len(case_slices)
+#         # Check if adding these slices exceeds the required labeled_slice_num
+#         if total_slices + len(case_slices) > labeled_slice_num:
+#             remaining_slices = labeled_slice_num - total_slices
+#             labeled_slices.append(case_slices.sample(n=remaining_slices, random_state=1))
+#             break
+#         else:
+#             labeled_slices.append(case_slices)
+#             total_slices += len(case_slices)
 
-    labeled_df = pd.concat(labeled_slices)
-    labeled_df.to_csv(f'{client_folder}/labeled.csv', index=False)
+#     labeled_df = pd.concat(labeled_slices)
+#     labeled_df.to_csv(f'{client_folder}/labeled.csv', index=False)
 
-    unlabeled_df = data_df[~data_df['image_id'].isin(labeled_df['image_id'])]
-    unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
-    data_df.to_csv(f'{client_folder}/all.csv', index=False)
+#     unlabeled_df = data_df[~data_df['image_id'].isin(labeled_df['image_id'])]
+#     unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
+#     data_df.to_csv(f'{client_folder}/all.csv', index=False)
 
 # 3. Cardiac Task
-config = yaml.safe_load(open(filepath.joinpath("../configs/cardiac/scripts_conf.yaml")))
+cfg_path = repo_root / 'configs' / 'cardiac' / 'scripts.yaml'
+with cfg_path.open() as f:
+    config = yaml.safe_load(f)
+
 target_folder = config.get("target_folder", "~/cardiac/fed_semi")
 labeled_slice_num = config.get("labeled_slice_num", 20)
 domain_names = {1:'A', 2:'B', 3:'C', 4:'D'}
@@ -119,86 +130,91 @@ for domain in domain_names.keys():
     unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
     data_df.to_csv(f'{client_folder}/all.csv', index=False)
 
-# 4. Spine Task
-config = yaml.safe_load(open(filepath.joinpath("../configs/spine/scripts_conf.yaml")))
-target_folder = config.get("target_folder", "~/spine/fed_semi")
-labeled_slice_num = config.get("labeled_slice_num", 20)
-domain_names = {1:'A', 2:'B', 3:'C', 4:'D'}
+# # 4. Spine Task
+# cfg_path = repo_root / 'configs' / 'spine' / 'scripts.yaml'
+# with cfg_path.open() as f:
+#     config = yaml.safe_load(f)
+# target_folder = config.get("target_folder", "~/spine/fed_semi")
+# labeled_slice_num = config.get("labeled_slice_num", 20)
+# domain_names = {1:'A', 2:'B', 3:'C', 4:'D'}
 
-for domain in domain_names.keys():
-    client_folder = f'{target_folder}/client_{domain}'
-    # generate the labeled/unlabeled split
-    train_df = pd.read_csv(f'{client_folder}/train.csv')
-    # data in test.csv is unlabeled
-    test_df = pd.read_csv(f'{client_folder}/test.csv')
+# for domain in domain_names.keys():
+#     client_folder = f'{target_folder}/client_{domain}'
+#     # generate the labeled/unlabeled split
+#     train_df = pd.read_csv(f'{client_folder}/train.csv')
+#     # data in test.csv is unlabeled
+#     test_df = pd.read_csv(f'{client_folder}/test.csv')
     
-    # notice: labeled data should be selected from consecutive slices within the same case
-    all_cases = list(set(train_df['image_id'].str.split(r'_').apply(lambda x: x[0]).to_list()))
-    # Randomly shuffle cases
-    random.shuffle(all_cases)
+#     # notice: labeled data should be selected from consecutive slices within the same case
+#     all_cases = list(set(train_df['image_id'].str.split(r'_').apply(lambda x: x[0]).to_list()))
+#     # Randomly shuffle cases
+#     random.shuffle(all_cases)
 
-    labeled_slices = []
-    total_slices = 0
+#     labeled_slices = []
+#     total_slices = 0
     
-    for case in all_cases:
-        # Select all slices from the current case
-        case_slices = train_df[train_df['image_id'].str.startswith(case)]
+#     for case in all_cases:
+#         # Select all slices from the current case
+#         case_slices = train_df[train_df['image_id'].str.startswith(case)]
         
-        # Check if adding these slices exceeds the required labeled_slice_num
-        if total_slices + len(case_slices) > labeled_slice_num:
-            remaining_slices = labeled_slice_num - total_slices
-            labeled_slices.append(case_slices.sample(n=remaining_slices, random_state=1))
-            break
-        else:
-            labeled_slices.append(case_slices)
-            total_slices += len(case_slices)
+#         # Check if adding these slices exceeds the required labeled_slice_num
+#         if total_slices + len(case_slices) > labeled_slice_num:
+#             remaining_slices = labeled_slice_num - total_slices
+#             labeled_slices.append(case_slices.sample(n=remaining_slices, random_state=1))
+#             break
+#         else:
+#             labeled_slices.append(case_slices)
+#             total_slices += len(case_slices)
 
-    labeled_df = pd.concat(labeled_slices)
-    labeled_df.to_csv(f'{client_folder}/labeled.csv', index=False)
+#     labeled_df = pd.concat(labeled_slices)
+#     labeled_df.to_csv(f'{client_folder}/labeled.csv', index=False)
 
-    unlabeled_df = train_df[~train_df['image_id'].isin(labeled_df['image_id'])]
-    unlabeled_df = pd.concat([unlabeled_df, test_df])
-    unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
-    train_df.to_csv(f'{client_folder}/all.csv', index=False)
+#     unlabeled_df = train_df[~train_df['image_id'].isin(labeled_df['image_id'])]
+#     unlabeled_df = pd.concat([unlabeled_df, test_df])
+#     unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
+#     train_df.to_csv(f'{client_folder}/all.csv', index=False)
 
-# 5. Bladder Cancer Task
-config = yaml.safe_load(open(filepath.joinpath("../configs/bladder/scripts_conf.yaml")))
-target_folder = config.get("target_folder", "~/bladder/fed_semi")
-labeled_slice_num = config.get("labeled_slice_num", 20)
-center2client = {'Center1':1, 'Center2':2, 'Center3':3, 'Center4':4}
+# # 5. Bladder Cancer Task
+# cfg_path = repo_root / 'configs' / 'bladder' / 'scripts.yaml'
+# with cfg_path.open() as f:
+#     config = yaml.safe_load(f)
 
-for client in center2client.values():
-    client_folder = f'{target_folder}/client_{client}'
-    # generate the labeled/unlabeled split
-    train_df = pd.read_csv(f'{client_folder}/train.csv')
-    # data in test.csv is unlabeled
-    test_df = pd.read_csv(f'{client_folder}/test.csv')
+# target_folder = config.get("target_folder", "~/bladder/fed_semi")
+# labeled_slice_num = config.get("labeled_slice_num", 20)
+# center2client = {'Center1':1, 'Center2':2, 'Center3':3, 'Center4':4}
+
+# for client in center2client.values():
+#     client_folder = f'{target_folder}/client_{client}'
+#     # generate the labeled/unlabeled split
+#     train_df = pd.read_csv(f'{client_folder}/train.csv')
+#     # data in test.csv is unlabeled
+#     test_df = pd.read_csv(f'{client_folder}/test.csv')
     
-    # notice: labeled data should be selected from consecutive slices within the same case
-    all_cases = list(set(train_df['image_id'].str.split(r'_').apply(lambda x: x[0]).to_list()))
-    # Randomly shuffle cases
-    random.shuffle(all_cases)
+#     # notice: labeled data should be selected from consecutive slices within the same case
+#     all_cases = list(set(train_df['image_id'].str.split(r'_').apply(lambda x: x[0]).to_list()))
+#     # Randomly shuffle cases
+#     random.shuffle(all_cases)
 
-    labeled_slices = []
-    total_slices = 0
+#     labeled_slices = []
+#     total_slices = 0
     
-    for case in all_cases:
-        # Select all slices from the current case
-        case_slices = train_df[train_df['image_id'].str.startswith(case)]
+#     for case in all_cases:
+#         # Select all slices from the current case
+#         case_slices = train_df[train_df['image_id'].str.startswith(case)]
         
-        # Check if adding these slices exceeds the required labeled_slice_num
-        if total_slices + len(case_slices) > labeled_slice_num:
-            remaining_slices = labeled_slice_num - total_slices
-            labeled_slices.append(case_slices.sample(n=remaining_slices, random_state=1))
-            break
-        else:
-            labeled_slices.append(case_slices)
-            total_slices += len(case_slices)
+#         # Check if adding these slices exceeds the required labeled_slice_num
+#         if total_slices + len(case_slices) > labeled_slice_num:
+#             remaining_slices = labeled_slice_num - total_slices
+#             labeled_slices.append(case_slices.sample(n=remaining_slices, random_state=1))
+#             break
+#         else:
+#             labeled_slices.append(case_slices)
+#             total_slices += len(case_slices)
 
-    labeled_df = pd.concat(labeled_slices)
-    labeled_df.to_csv(f'{client_folder}/labeled.csv', index=False)
+#     labeled_df = pd.concat(labeled_slices)
+#     labeled_df.to_csv(f'{client_folder}/labeled.csv', index=False)
 
-    unlabeled_df = train_df[~train_df['image_id'].isin(labeled_df['image_id'])]
-    unlabeled_df = pd.concat([unlabeled_df, test_df])
-    unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
-    train_df.to_csv(f'{client_folder}/all.csv', index=False)
+#     unlabeled_df = train_df[~train_df['image_id'].isin(labeled_df['image_id'])]
+#     unlabeled_df = pd.concat([unlabeled_df, test_df])
+#     unlabeled_df.to_csv(f'{client_folder}/unlabeled.csv', index=False)
+#     train_df.to_csv(f'{client_folder}/all.csv', index=False)

@@ -4,7 +4,10 @@ import cv2
 import torch
 
 def draw_mask_and_save(img:np.ndarray, pred:torch.Tensor, save_path:str='./img/1/example.png')->None:
-    color_list = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255)]
+    # color_list = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255)]
+    # for polyp
+    color_list = [(0, 255, 255), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255)]
+
     if len(pred.shape) == 2:
         pred = pred.unsqueeze(0)
     if len(img.shape) == 2: # If img is HxW

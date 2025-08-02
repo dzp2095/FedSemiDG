@@ -1,5 +1,10 @@
 import argparse
 
+def parse_gpu_list(s):
+    if not s or s.strip() == "":
+        return []
+    return [int(x) for x in s.split(",") if x.strip().isdigit()]
+
 def args_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default="/home/user/fedmu/configs/isic/run_conf.yaml", help='config file')
@@ -23,6 +28,17 @@ def args_parser():
     parser.add_argument('--feature_loss_weight', type=float, default=None, help='feature loss weight')
     parser.add_argument('--entropy_start_ratio', type=float, default=None, help='uncertain ratio')
     parser.add_argument('--entropy_end_ratio', type=float, default=None, help='uncertain ratio')
+
+    parser.add_argument('--lr', type=float, default=None, help='learning rate for training')
+
+    parser.add_argument(
+    '--gpu_exclude_list',
+    type=parse_gpu_list,
+    default=[],
+    help='comma-separated GPU ids to skip, e.g. "0,3"'
+    )
+
+    parser.add_argument('--gpu_pool', type=str, default=None, help='comma-separated GPU ids to use, e.g. "0,3"')
 
     args, unknown = parser.parse_known_args()
     return args
@@ -54,4 +70,6 @@ def args2cfg(cfg, args):
     if args.entropy_end_ratio is not None:
         cfg['train']['entropy_end_ratio'] = args.entropy_end_ratio
     
+    if args.lr is not None:
+        cfg['train']['optimizer']['lr'] = args.lr
     return cfg
