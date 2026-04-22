@@ -1,222 +1,38 @@
-# # Description: Train the model on the localized data: supervised learning
-# for i in {1..4}
-# do
-#     for j in {1..3}
-#     do
-#         python3 local_train.py \
-#             --config "/storage/zhipengdeng/project/fed_semi/configs/fundus/run_conf.yaml" \
-#             --run_name "localized_client_${i}_run_${j}" \
-#             --train_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/client_$i" \
-#             --test_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/" \
-#             --deterministic 0 \
-#             --trainer "supervised" 
-#     done
-# done
+#!/usr/bin/env bash
+set -euo pipefail
 
+CONDA_ENV="${FEDSEMI_CONDA_ENV:-py3.10}"
+GPU_POOL="${FEDSEMI_GPU_POOL:-2,3,4}"
+DATA_ROOT="${FEDSEMI_DATA_ROOT:-/data/segmentation}"
+STAMP="${1:-$(date +%Y%m%d_%H%M%S)}"
 
-# # Description: Train the model on the localized data: semi-supervised learning
-# for i in {1..4}
-# do
-#     for j in {1..3}
-#     do
-#         python3 local_train.py \
-#             --config "/storage/zhipengdeng/project/fed_semi/configs/fundus/run_conf.yaml" \
-#             --run_name "localized_client_${i}_run_${j}" \
-#             --train_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/client_$i" \
-#             --test_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/" \
-#             --deterministic 0 \
-#             --trainer "semi" 
-#     done
-# done
+run_local() {
+  local task="$1"
+  local trainer="$2"
+  local client="$3"
+  conda run -n "${CONDA_ENV}" python local_train.py \
+    --config "configs/${task}/run_conf.yaml" \
+    --run_name "${task}_${trainer}_${client}_${STAMP}" \
+    --trainer "${trainer}" \
+    --train_path "${DATA_ROOT}/${task}/fed_semi/${client}" \
+    --gpu_pool "${GPU_POOL}"
+}
 
-# fundus task
-python3 local_train.py \
-    --config "/storage/zhipengdeng/project/fed_semi/configs/fundus/run_conf.yaml" \
-    --run_name "localized_supervised_client_4" \
-    --train_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/client_4" \
-    --test_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/" \
-    --trainer "supervised" 
-
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/fundus/fl_run_conf.yaml" \
-    --run_name "fl_semi_ga_labeled_1_2_3_unseen_4" \
-    --train_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi" \
-    --test_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi" \
-    --labeled_clients client_1 client_2 client_3 \
-    --trainer semi \
-    --unseen_client client_4 \
-    --use_ga
-
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/fundus/fl_run_conf.yaml" \
-    --run_name "fl_fully_labeled_fundus" \
-    --train_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/fundus_dofe/fed_semi/" \
+run_fl() {
+  local task="$1"
+  local trainer="$2"
+  conda run -n "${CONDA_ENV}" python fl_train.py \
+    --config "configs/${task}/fl_run_conf.yaml" \
+    --run_name "${task}_fl_${trainer}_${STAMP}" \
+    --trainer "${trainer}" \
+    --train_path "${DATA_ROOT}/${task}/fed_semi" \
     --labeled_clients client_1 client_2 client_3 \
     --unseen_client client_4 \
-    --trainer "supervised" 
+    --gpu_pool "${GPU_POOL}"
+}
 
-# prostate task
-python3 local_train.py \
-    --config "/storage/zhipengdeng/project/fed_semi/configs/prostate/run_conf.yaml" \
-    --run_name "localized_supervised_prostate_client_2" \
-    --train_path "/storage/zhipengdeng/data/segmentation/prostate_mri/fed_semi/client_2" \
-    --test_path "/storage/zhipengdeng/data/segmentation/prostate_mri/fed_semi/" \
-    --deterministic 0 \
-    --trainer "supervised" 
-
-python3 local_train.py \
-    --config "/storage/zhipengdeng/project/fed_semi/configs/prostate/run_conf.yaml" \
-    --run_name "localized_semi_prostate_client_2" \
-    --train_path "/storage/zhipengdeng/data/segmentation/prostate_mri/fed_semi/client_2" \
-    --test_path "/storage/zhipengdeng/data/segmentation/prostate_mri/fed_semi/" \
-    --deterministic 0 \
-    --trainer "semi" 
-
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/prostate/fl_run_conf.yaml" \
-    --run_name "fl_semi_prostate_labeled_1_2_3_4_5_unseen_6" \
-    --train_path "/storage/zhipengdeng/data/segmentation/prostate_mri/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/prostate_mri/fed_semi/" \
-    --labeled_clients client_1 client_2 client_3 client_4 client_5 \
-    --trainer semi \
-    --unseen_client client_6 \
-    --use_ga
-
-# cardiac task
-python3 local_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/cardiac/run_conf.yaml" \
-    --run_name "localized_supervised_cardiac_client_4" \
-    --train_path "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/client_4" \
-    --test_path "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/" \
-    --deterministic 0 \
-    --trainer "supervised" 
-
-python3 local_train.py \
-    --config "/storage/zhipengdeng/project/fed_semi/configs/cardiac/run_conf_debug.yaml" \
-    --run_name "localized_semi_cardiac_client_4" \
-    --train_path "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/client_4" \
-    --test_path "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/" \
-    --deterministic 0 \
-    --trainer "semi" 
-
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi_dev/configs/cardiac/fl_run_conf.yaml" \
-    --run_name "fl_semi_labeled_1_2_3_unseen_4" \
-    --train_path "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/cardiac/fed_semi/" \
-    --deterministic 0 \
-    --labeled_clients client_1 client_2 client_3\
-    --trainer semi \
-    --unseen_client client_4 \
-    --use_ga
-
-# spine task
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/spine/fl_run_conf.yaml" \
-    --run_name "fl_fully_spine" \
-    --train_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
-    --labeled_clients client_1 client_2 client_3 \
-    --unseen_client client_4 \
-    --trainer "supervised" 
-
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/spine/fl_run_conf.yaml" \
-    --run_name "fl_semi_spine" \
-    --train_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
-    --labeled_clients client_1 client_2 client_3 \
-    --unseen_client client_4 \
-    --trainer "semi" 
-
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi_dev/configs/spine/fl_run_conf.yaml" \
-    --run_name "fl_ga_spine" \
-    --train_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
-    --labeled_clients client_1 client_2 client_3 \
-    --unseen_client client_4 \
-    --trainer "semi" \
-    --use_ga
-
-python3 local_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/spine/run_conf.yaml" \
-    --run_name "localized_semi_spine_client_4" \
-    --train_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/client_4" \
-    --test_path "/storage/zhipengdeng/data/segmentation/spine/fed_semi/" \
-    --trainer "semi" 
-
-
-# bladder task
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/bladder/fl_run_conf.yaml" \
-    --run_name "fl_fully_bladder" \
-    --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
-    --labeled_clients client_1 client_2 client_3 \
-    --unseen_client client_4 \
-    --trainer "supervised" 
-
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/bladder/fl_run_conf.yaml" \
-    --run_name "fl_semi_bladder" \
-    --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
-    --labeled_clients client_1 client_2 client_3 \
-    --unseen_client client_4 \
-    --trainer "semi" 
-
-python3 fl_train.py \
-    --config "/zhipengdeng/project/fed_semi_dev/configs/bladder/fl_run_conf.yaml" \
-    --run_name "fl_ga_bladder" \
-    --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
-    --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
-    --labeled_clients client_1 client_2 client_3 \
-    --unseen_client client_4 \
-    --trainer "semi" \
-    --use_ga
-
-python3 local_train.py \
-    --config "/zhipengdeng/project/fed_semi/configs/bladder/run_conf.yaml" \
-    --run_name "localized_semi_bladder_client_4" \
-    --train_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/client_4" \
-    --test_path "/storage/zhipengdeng/data/segmentation/bladder/fed_semi/" \
-    --trainer "semi" 
-# colon task
-
-python3 local_train.py \
-    --config /home/dengzhipeng/project/fed_semi/configs/colon/run_conf.yaml \
-    --run_name localized_labelonly_colon_client_1_run_1 \
-    --train_path /home/dengzhipeng/data/segmentation/colon/fed_semi/client_1 \
-    --test_path /home/dengzhipeng/data/segmentation/colon/fed_semi/ \
-    --trainer supervised \
-    --gpu_pool 0
-
-python3 local_train.py \
-    --config /home/dengzhipeng/project/fed_semi/configs/colon/run_conf.yaml \
-    --run_name localized_semi_colon_client_1_run_1 \
-    --train_path /home/dengzhipeng/data/segmentation/colon/fed_semi/client_1 \
-    --test_path /home/dengzhipeng/data/segmentation/colon/fed_semi/ \
-    --trainer semi \
-    --gpu_pool 0
-
-
-#!/bin/bash
-
-# This script corresponds to the first iteration of all loops.
-
-python3 fl_train.py \
-    --config /home/dengzhipeng/project/fed_semi/configs/colon/fl_run_conf.yaml \
-    --run_name "fl_colon_ours_dynamic_flw_0.3_fpr_0.3_esr_0.15_eer_0.3_labeled_[1, 2, 3]_unseen_4" \
-    --train_path /home/dengzhipeng/data/segmentation/colon/fed_semi \
-    --test_path /home/dengzhipeng/data/segmentation/colon/fed_semi \
-    --trainer semi \
-    --use_ga \
-    --unseen_client client_4 \
-    --labeled_clients client_1 client_2 client_3 \
-    --feature_loss_weight 0.3 \
-    --fp_rate 0.3 \
-    --entropy_start_ratio 0.15 \
-    --entropy_end_ratio 0.3 \
-    --gpu_pool 0
+# Examples:
+# run_local cardiac supervised client_1
+# run_local colon semi client_1
+# run_fl spine semi
+# run_fl bladder semi

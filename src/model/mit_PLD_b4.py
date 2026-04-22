@@ -1,4 +1,7 @@
 import warnings
+import logging
+import os
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,6 +14,8 @@ import math
 import cv2
 
 from mmcv.cnn import build_norm_layer
+
+logger = logging.getLogger(__name__)
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
@@ -411,7 +416,7 @@ class Decoder(Module):
         self.linear_pred = Conv2d(embedding_dim, self.num_classes, kernel_size=1)
         self.dropout = nn.Dropout(0.1)
 
-        # 新增：缓存融合特征
+        # Cache fused feature map for optional consistency losses
         self.last_fused = None
 
     def forward(self, inputs):
@@ -430,7 +435,7 @@ class Decoder(Module):
         L2  = self.linear_fuse2(torch.cat([L34, _c2], dim=1))
         _c  = self.linear_fuse1(torch.cat([L2, _c1], dim=1))
 
-        # 缓存融合特征（用于 feature-level consistency）
+        # Store fused feature map for downstream training logic
         self.last_fused = _c
 
         x = self.dropout(_c)
@@ -447,56 +452,48 @@ class mit_PLD_b4(nn.Module):
 
         self.backbone = mit_b4()
         self.decode_head = Decoder(dims=[64, 128, 320, 512], dim=256, class_num=class_num)
-
-        # 复用的上采样层
         self.up = UpsamplingBilinear2d(scale_factor=4)
 
-        # 预定义 Dropout2d，避免在 forward 里重复创建模块
-        if self.fp_rate > 0:
-            self.fp_drop = nn.ModuleList([
-                nn.Dropout2d(self.fp_rate),  # for c1
-                nn.Dropout2d(self.fp_rate),  # for c2
-                nn.Dropout2d(self.fp_rate),  # for c3
-                nn.Dropout2d(self.fp_rate)   # for c4
-            ])
-        else:
-            self.fp_drop = None
+        self.fp_drop = nn.ModuleList([
+            nn.Dropout2d(self.fp_rate),
+            nn.Dropout2d(self.fp_rate),
+            nn.Dropout2d(self.fp_rate),
+            nn.Dropout2d(self.fp_rate),
+        ])
 
-        self._init_weights()  # load pretrain
+        self._init_weights()
 
-    def forward(self, x):
-        # 1) backbone 一次前向
-        feats = self.backbone(x)  # list: [c1, c2, c3, c4]
-
-        # 2) 正常分支
+    def forward(self, x, return_features=False):
+        feats = self.backbone(x)
         logits, c1, c2, c3, c4 = self.decode_head(feats)
-        fused = self.decode_head.last_fused  # 融合特征（相当于 UNet 的 y1）
-
+        fused = self.decode_head.last_fused
         logits = self.up(logits)
 
-        # 3) 训练态 + 开启 fp_rate 时，做一次“扰动特征”的分支
-        if self.training and self.fp_rate > 0.0:
-            c1_p = self.fp_drop[0](c1)
-            c2_p = self.fp_drop[1](c2)
-            c3_p = self.fp_drop[2](c3)
-            c4_p = self.fp_drop[3](c4)
+        if not (self.training and return_features):
+            return logits
 
-            logits_fp, *_ = self.decode_head([c1_p, c2_p, c3_p, c4_p])
-            fused_fp = self.decode_head.last_fused
+        c1_p = self.fp_drop[0](c1)
+        c2_p = self.fp_drop[1](c2)
+        c3_p = self.fp_drop[2](c3)
+        c4_p = self.fp_drop[3](c4)
+        _logits_fp, *_ = self.decode_head([c1_p, c2_p, c3_p, c4_p])
+        fused_fp = self.decode_head.last_fused
 
-            logits_fp = self.up(logits_fp)
-            return logits, fused, fused_fp
-
-        # 推理或未开启扰动：只返回主输出
-        return logits
+        return logits, fused, fused_fp
 
     def _init_weights(self):
-        pretrained_dict = torch.load('/home/dengzhipeng/project/fed_semi/models/mit_b4.pth')
+        model_path = os.environ.get(
+            "FEDSEMI_COLON_PRETRAIN",
+            str(Path(__file__).resolve().parents[2] / "models" / "mit_b4.pth"),
+        )
+
+        if not os.path.isfile(model_path):
+            logger.warning(f"[mit_PLD_b4] Pretrain not found, skip loading: {model_path}")
+            return
+
+        pretrained_dict = torch.load(model_path, map_location="cpu")
         model_dict = self.backbone.state_dict()
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
         model_dict.update(pretrained_dict)
         self.backbone.load_state_dict(model_dict)
-        print("successfully loaded!!!!")
-
-
-
+        logger.info(f"[mit_PLD_b4] Loaded backbone pretrain from {model_path}")

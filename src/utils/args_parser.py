@@ -1,75 +1,110 @@
 import argparse
+from typing import Any, Dict, List
 
-def parse_gpu_list(s):
-    if not s or s.strip() == "":
+from src.utils.path_utils import expand_cfg_paths, expand_path
+
+
+def parse_gpu_list(value: str) -> List[int]:
+    if not value or value.strip() == "":
         return []
-    return [int(x) for x in s.split(",") if x.strip().isdigit()]
+    return [int(x) for x in value.split(",") if x.strip().isdigit()]
 
-def args_parser():
+
+def args_parser() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default="/home/user/fedmu/configs/isic/run_conf.yaml", help='config file')
-    parser.add_argument('--eval_only', type=int, default=False, help='whether only test')
-    parser.add_argument('--resume_path', type=str, default="", help='saved checkpoin')
-    parser.add_argument('--seed', type=int, default=1337, help='random seed')
-    parser.add_argument('--gpu', type=str, default='1', help='whether use gpu')
-    parser.add_argument('--val_interval', type=int, default=1, help='valdation interval')
-    parser.add_argument('--amp', type=int, default=False, help='mixed precision')
-    parser.add_argument('--path_checkpoint', type=str, default=None, help='path of the checkpoint of the model')
-    parser.add_argument('--deterministic', action='store_true', help='whether use deterministic training, default is False')
 
-    parser.add_argument('--run_name', type=str, default=None, help='run name of wandb')    
-    parser.add_argument('--train_path', type=str, default=None, help='train path for localized training')
-    parser.add_argument('--test_path', type=str, default=None, help='test path for localized training')
-    parser.add_argument('--trainer', type=str, default='supervised', help='trainer type: supervised, semi')
-    parser.add_argument('--labeled_clients', type=str, nargs='+', default=None, help='labeled clients')
-    parser.add_argument('--unseen_client', type=str, default=None, help='unseen client')
-    parser.add_argument('--use_ga', action='store_true', help='Whether to use GA, default is False')
-    parser.add_argument('--fp_rate', type=float, default=None, help='feature dropping rate')
-    parser.add_argument('--feature_loss_weight', type=float, default=None, help='feature loss weight')
-    parser.add_argument('--entropy_start_ratio', type=float, default=None, help='uncertain ratio')
-    parser.add_argument('--entropy_end_ratio', type=float, default=None, help='uncertain ratio')
+    parser.add_argument("--config", type=str, required=True, help="Path to YAML config file")
+    parser.add_argument("--run_name", type=str, required=True, help="Experiment run name")
 
-    parser.add_argument('--lr', type=float, default=None, help='learning rate for training')
+    parser.add_argument("--resume_path", type=str, default="", help="Checkpoint path to resume from")
+    parser.add_argument("--seed", type=int, default=1337, help="Random seed")
+    parser.add_argument("--gpu", type=str, default="1", help="Use GPU when available")
+    parser.add_argument("--deterministic", action="store_true", help="Enable deterministic training")
+
+    parser.add_argument("--train_path", type=str, default=None, help="Override training data root")
+    parser.add_argument("--trainer", type=str, default="supervised", help="Trainer type: supervised | semi")
+    parser.add_argument("--labeled_clients", type=str, nargs="+", default=None, help="Labeled FL clients")
+    parser.add_argument("--unseen_client", type=str, default=None, help="Held-out FL client")
+
+    parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
+    parser.add_argument("--batch_size_override", type=int, default=None, help="Override train.batch_size")
+    parser.add_argument("--num_workers_override", type=int, default=None, help="Override train.num_workers")
 
     parser.add_argument(
-    '--gpu_exclude_list',
-    type=parse_gpu_list,
-    default=[],
-    help='comma-separated GPU ids to skip, e.g. "0,3"'
+        "--gpu_exclude_list",
+        type=parse_gpu_list,
+        default=[],
+        help="Comma-separated physical GPU ids to skip, for example: 0,3",
+    )
+    parser.add_argument(
+        "--gpu_pool",
+        type=str,
+        default=None,
+        help="Comma-separated physical GPU ids exported through CUDA_VISIBLE_DEVICES",
     )
 
-    parser.add_argument('--gpu_pool', type=str, default=None, help='comma-separated GPU ids to use, e.g. "0,3"')
+    parser.add_argument("--rounds_override", type=int, default=None, help="Override fl.rounds")
+    parser.add_argument("--local_iter_override", type=int, default=None, help="Override fl.local_iter")
+    parser.add_argument("--max_iter_override", type=int, default=None, help="Override train.max_iter")
+    parser.add_argument(
+        "--iter_per_round_override",
+        type=int,
+        default=None,
+        help="Override local.iter_per_round.iter for FL client training",
+    )
 
-    args, unknown = parser.parse_known_args()
+    args, _unknown = parser.parse_known_args()
     return args
+
 
 args = args_parser()
 
-def args2cfg(cfg, args):
-    run_name = args.run_name
-    cfg['wandb']['run_name'] = run_name
-    if args.train_path is not None:
-        cfg['dataset']['train'] = args.train_path
-    
-    if args.test_path is not None:
-        cfg['dataset']['test'] = args.test_path
 
-    if args.use_ga is not None:
-        cfg['fl']['use_ga'] = args.use_ga
-        print(args.use_ga)
-    
-    if args.fp_rate is not None:
-        cfg['model']['fp_rate'] = args.fp_rate
-    
-    if args.feature_loss_weight is not None:
-        cfg['train']['feature_loss_weight'] = args.feature_loss_weight
+def _apply_runtime_overrides(cfg: Dict[str, Any], run_args: argparse.Namespace) -> None:
+    cfg.setdefault("train", {})
 
-    if args.entropy_start_ratio is not None:
-        cfg['train']['entropy_start_ratio'] = args.entropy_start_ratio
+    if run_args.batch_size_override is not None:
+        cfg["train"]["batch_size"] = run_args.batch_size_override
 
-    if args.entropy_end_ratio is not None:
-        cfg['train']['entropy_end_ratio'] = args.entropy_end_ratio
-    
-    if args.lr is not None:
-        cfg['train']['optimizer']['lr'] = args.lr
+    if run_args.num_workers_override is not None:
+        cfg["train"]["num_workers"] = run_args.num_workers_override
+
+    if run_args.rounds_override is not None:
+        cfg.setdefault("fl", {})
+        cfg["fl"]["rounds"] = run_args.rounds_override
+
+    if run_args.local_iter_override is not None:
+        cfg.setdefault("fl", {})
+        cfg["fl"]["local_iter"] = run_args.local_iter_override
+
+    if run_args.max_iter_override is not None:
+        cfg["train"]["max_iter"] = run_args.max_iter_override
+
+    if run_args.iter_per_round_override is not None:
+        cfg.setdefault("local", {})
+        cfg["local"].setdefault("iter_per_round", {})
+        cfg["local"]["iter_per_round"]["iter"] = run_args.iter_per_round_override
+        cfg["local"]["iter_per_round"]["epoch"] = None
+
+
+def args2cfg(cfg: Dict[str, Any], run_args: argparse.Namespace) -> Dict[str, Any]:
+    cfg = expand_cfg_paths(cfg)
+
+    cfg.setdefault("wandb", {})
+    cfg["wandb"]["run_name"] = run_args.run_name
+
+    if run_args.train_path is not None:
+        cfg.setdefault("dataset", {})
+        cfg["dataset"]["train"] = expand_path(run_args.train_path)
+
+    if run_args.resume_path:
+        cfg.setdefault("train", {})
+        cfg["train"]["resume_path"] = expand_path(run_args.resume_path)
+
+    if run_args.lr is not None:
+        cfg.setdefault("train", {})
+        cfg["train"].setdefault("optimizer", {})
+        cfg["train"]["optimizer"]["lr"] = run_args.lr
+
+    _apply_runtime_overrides(cfg, run_args)
     return cfg

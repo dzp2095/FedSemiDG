@@ -20,8 +20,8 @@ cfg_path = repo_root / 'configs' / 'cardiac' / 'scripts.yaml'
 with cfg_path.open() as f:
     config = yaml.safe_load(f)
 
-target_folder = Path(config.get("target_folder", "~/cardiac/fed_semi")).expanduser()
-raw_data_folder = Path(config.get("raw_data_folder", "cardiac/OpenDataset")).expanduser()
+target_folder = Path(os.path.expandvars(config.get("target_folder", "~/cardiac/fed_semi"))).expanduser()
+raw_data_folder = Path(os.path.expandvars(config.get("raw_data_folder", "cardiac/OpenDataset"))).expanduser()
 
 csv_file = pd.read_csv(f'{raw_data_folder}/211230_M&Ms_Dataset_information_diagnosis_opendataset.csv')
 resize = (config.get("resize")['width'], config.get("resize")['height'])

@@ -137,10 +137,10 @@ parent_dir = current_dir.parent
 sys.path.append(str(parent_dir))
 
 filepath = Path(__file__).resolve().parent
-config = yaml.safe_load(open(filepath.joinpath("../configs/bladder/scripts_conf.yaml")))
+config = yaml.safe_load(open(filepath.joinpath("../configs/bladder/scripts.yaml")))
 
-target_folder = config.get("target_folder", "~/bladder/fed_semi")
-raw_data_folder = config.get("raw_data_folder", f"bladder/data")
+target_folder = os.path.expandvars(config.get("target_folder", "~/bladder/fed_semi"))
+raw_data_folder = os.path.expandvars(config.get("raw_data_folder", f"bladder/data"))
 resize = (config.get("resize")['width'], config.get("resize")['height'])
 
 random.seed(config.get("seed", 0))

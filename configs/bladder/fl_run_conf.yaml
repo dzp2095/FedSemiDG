@@ -1,0 +1,65 @@
+task: bladder
+
+dataset:
+  train: ${FEDSEMI_DATA_ROOT}/bladder/fed_semi
+  val: ${FEDSEMI_DATA_ROOT}/bladder/fed_semi
+  test: ${FEDSEMI_DATA_ROOT}/bladder/fed_semi
+  resize:
+    height: 256
+    width: 256
+  mean: [0.0, 0.0, 0.0]
+  std: [1.0, 1.0, 1.0]
+  seed: 42
+  path_rewrites:
+    /storage: ${FEDSEMI_STORAGE_ROOT}
+    /raid: ${FEDSEMI_STORAGE_ROOT}
+    /project: ${FEDSEMI_PROJECT_ROOT}
+
+model:
+  num_classes: 1
+  num_channels: 1
+  fp_rate: 0.3
+
+train:
+  batch_size: 4
+  num_workers: 2
+  max_iter: 20000
+  pseudo_label_threshold: 0.7
+  ema_decay: 0.99
+  uncertain_ema_decay: 0.9
+  feature_loss_weight: 0.3
+  entropy_start_ratio: 0.15
+  entropy_end_ratio: 0.3
+  checkpoint_dir: ${FEDSEMI_DATA_ROOT}/bladder/fed_semi/checkpoints/
+  resume_path: null
+  optimizer:
+    lr: 1.0e-4
+    beta1: 0.9
+    beta2: 0.9999
+    weight_decay: 5.0e-4
+  lr_scheduler:
+    factor: 0.1
+    patience: 2
+    min_lr: 1.0e-7
+
+local:
+  iter_per_round:
+    epoch: null
+    iter: 100
+
+wandb:
+  project: fedsemi_bladder
+  run_name: fedsemi
+
+fl:
+  rounds: 50
+  local_iter: 100
+  num_clients: 4
+  warm_up: 0
+  wandb_global: false
+  model:
+    save_start_round: 999999
+    save_interval: 0
+
+hooks:
+  wandb: false

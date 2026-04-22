@@ -1,0 +1,8 @@
+target_folder: ${FEDSEMI_DATA_ROOT}/bladder/fed_semi
+raw_data_folder: ${FEDSEMI_RAW_DATA_ROOT}/bladder/data
+seed: 523
+test_ratio: 0.2
+
+resize:
+  height: 256
+  width: 256

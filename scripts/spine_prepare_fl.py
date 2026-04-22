@@ -18,10 +18,10 @@ parent_dir = current_dir.parent
 sys.path.append(str(parent_dir))
 
 filepath = Path(__file__).resolve().parent
-config = yaml.safe_load(open(filepath.joinpath("../configs/spine/scripts_conf.yaml")))
+config = yaml.safe_load(open(filepath.joinpath("../configs/spine/scripts.yaml")))
 
-target_folder = config.get("target_folder", "~/spine/fed_semi")
-raw_data_folder = config.get("raw_data_folder", f"spine/data")
+target_folder = os.path.expandvars(config.get("target_folder", "~/spine/fed_semi"))
+raw_data_folder = os.path.expandvars(config.get("raw_data_folder", f"spine/data"))
 random.seed(config.get("seed", 0))
 resize = (config.get("resize")['width'], config.get("resize")['height'])
 

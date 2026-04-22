@@ -1,4 +1,5 @@
 import os
+import os
 import sys
 import json
 import yaml
@@ -16,8 +17,8 @@ from tqdm import tqdm
 cfg_file = Path(__file__).resolve().parent.parent / "configs" / "colon" / "scripts.yaml"
 cfg = yaml.safe_load(cfg_file.read_text())
 
-RAW_ROOT = Path(cfg.get("raw_data_folder", "colon")).expanduser()
-OUT_ROOT = Path(cfg.get("target_folder", "~/colon/experiments_fed")).expanduser()
+RAW_ROOT = Path(os.path.expandvars(cfg.get("raw_data_folder", "colon"))).expanduser()
+OUT_ROOT = Path(os.path.expandvars(cfg.get("target_folder", "~/colon/experiments_fed"))).expanduser()
 OUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 SEED = int(cfg.get("seed", 42))
@@ -28,7 +29,7 @@ w = int(cfg["resize"]["width"])
 h = int(cfg["resize"]["height"])
 RESIZE = (w, h)
 
-TEST_RATIO = float(cfg.get("test_ratio", 0.1))   # 只用 test_ratio
+TEST_RATIO = float(cfg.get("test_ratio", 0.1))   # split ratio used for test set
 TRAINABLE = set(cfg.get("trainable_domains", ["kvasir", "cvc_clinic"]))
 
 # ---------------------------------------------

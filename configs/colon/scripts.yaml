@@ -1,0 +1,8 @@
+target_folder: ${FEDSEMI_DATA_ROOT}/colon/fed_semi
+raw_data_folder: ${FEDSEMI_RAW_DATA_ROOT}/colon
+seed: 523
+test_ratio: 0.1
+
+resize:
+  height: 256
+  width: 256

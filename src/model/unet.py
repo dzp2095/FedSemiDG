@@ -297,56 +297,66 @@ class Decoder(nn.Module):
 class UNet(nn.Module):
     def __init__(self, n_channels=3, n_classes=2, n=16, norm='bn', activation='relu', fp_rate=0.0):
         super(UNet, self).__init__()
-        self.fp_rate = fp_rate
-        self.convd1 = ConvD(n_channels,     n, norm, first=True, activation=activation)
-        self.convd2 = ConvD(n,   2*n, norm, activation=activation)
-        self.convd3 = ConvD(2*n, 4*n, norm, activation=activation)
-        self.convd4 = ConvD(4*n, 8*n, norm, activation=activation)
-        self.convd5 = ConvD(8*n,16*n, norm, activation=activation)
-        
-        self.convu4 = ConvU(16*n, norm, first=True, activation=activation)
-        self.convu3 = ConvU(8*n, norm, activation=activation)
-        self.convu2 = ConvU(4*n, norm, activation=activation)
-        self.convu1 = ConvU(2*n, norm, activation=activation)
+        self.fp_rate = float(fp_rate)
 
-        self.out1 = nn.Conv2d(2*n, n_classes, 3, padding=1)
+        self.convd1 = ConvD(n_channels, n, norm, first=True, activation=activation)
+        self.convd2 = ConvD(n, 2 * n, norm, activation=activation)
+        self.convd3 = ConvD(2 * n, 4 * n, norm, activation=activation)
+        self.convd4 = ConvD(4 * n, 8 * n, norm, activation=activation)
+        self.convd5 = ConvD(8 * n, 16 * n, norm, activation=activation)
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity=activation)
-            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.GroupNorm):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+        self.convu4 = ConvU(16 * n, norm, first=True, activation=activation)
+        self.convu3 = ConvU(8 * n, norm, activation=activation)
+        self.convu2 = ConvU(4 * n, norm, activation=activation)
+        self.convu1 = ConvU(2 * n, norm, activation=activation)
+        self.out1 = nn.Conv2d(2 * n, n_classes, 3, padding=1)
 
-    def forward(self, x):
+        self.fp_drop = nn.ModuleList([
+            nn.Dropout2d(self.fp_rate),
+            nn.Dropout2d(self.fp_rate),
+            nn.Dropout2d(self.fp_rate),
+            nn.Dropout2d(self.fp_rate),
+            nn.Dropout2d(self.fp_rate),
+        ])
+
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity=activation)
+            elif isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(module.weight, 1)
+                nn.init.constant_(module.bias, 0)
+
+    def _encode(self, x):
         x1 = self.convd1(x)
         x2 = self.convd2(x1)
         x3 = self.convd3(x2)
         x4 = self.convd4(x3)
         x5 = self.convd5(x4)
-        # Original forward pass without Dropout
+        return x1, x2, x3, x4, x5
+
+    def _decode(self, x1, x2, x3, x4, x5):
         y4 = self.convu4(x5, x4)
         y3 = self.convu3(y4, x3)
         y2 = self.convu2(y3, x2)
         y1 = self.convu1(y2, x1)
-        out = self.out1(y1)
-        
-        if self.training and self.fp_rate > 0.0:
-            # Repeat for out_fp with separate Dropout
-            x1_dropout1 = nn.Dropout2d(self.fp_rate)(x1)
-            x2_dropout1 = nn.Dropout2d(self.fp_rate)(x2)
-            x3_dropout1 = nn.Dropout2d(self.fp_rate)(x3)
-            x4_dropout1 = nn.Dropout2d(self.fp_rate)(x4)
-            x5_dropout1 = nn.Dropout2d(self.fp_rate)(x5)
+        return self.out1(y1), y1
 
-            y4_fp = self.convu4(x5_dropout1, x4_dropout1)
-            y3_fp = self.convu3(y4_fp, x3_dropout1)
-            y2_fp = self.convu2(y3_fp, x2_dropout1)
-            y1_fp = self.convu1(y2_fp, x1_dropout1)
-            return out, y1, y1_fp
-        return out
+    def forward(self, x, return_features=False):
+        x1, x2, x3, x4, x5 = self._encode(x)
+        out, feature = self._decode(x1, x2, x3, x4, x5)
 
-        
+        if not (self.training and return_features):
+            return out
+
+        x1_p = self.fp_drop[0](x1)
+        x2_p = self.fp_drop[1](x2)
+        x3_p = self.fp_drop[2](x3)
+        x4_p = self.fp_drop[3](x4)
+        x5_p = self.fp_drop[4](x5)
+        _, feature_p = self._decode(x1_p, x2_p, x3_p, x4_p, x5_p)
+
+        return out, feature, feature_p
+
 class Rec_Decoder(nn.Module):
     def __init__(self, n=16, num_classes=2, norm='bn', activation='relu', num_domains=None):
         super(Rec_Decoder, self).__init__()

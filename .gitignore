@@ -3,7 +3,6 @@
 *workspace
 wandb/
 .vscode/
-configs/
 log/
 log_uniform/
 arxiv_result/
