@@ -29,14 +29,6 @@ This repository provides a cleaned public training pipeline for four datasets:
 - Training-time evaluation/test hooks are removed from the training loop
 - `fundus` and `prostate` code paths are removed
 
-## Environment
-
-- Recommended conda environment: `py3.10`
-- Example:
-
-```bash
-conda run -n py3.10 python scripts/smoke_runner.py --gpu_pool 2,3,4 --batch_size 2 --num_workers 0 --max_iter 1
-```
 
 ## Data root
 
